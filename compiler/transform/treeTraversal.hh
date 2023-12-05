@@ -51,7 +51,7 @@ class TreeTraversal : public Garbageable {
     virtual ~TreeTraversal() = default;
     
     std::map<Tree, int> fVisited;      // visiting counter
-    
+
     virtual void self(Tree t) {
         if (fTrace) traceEnter(t);
         fIndent++;

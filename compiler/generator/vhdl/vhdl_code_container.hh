@@ -82,9 +82,9 @@ struct VhdlValue {
     } value;
     VhdlType vhdl_type;
 
-    VhdlValue(int value): value(), vhdl_type(VhdlType(VhdlInnerType::Integer, 32, 0)) { this->value.integer = value; }
-    VhdlValue(double value): value(), vhdl_type(VhdlType(VhdlInnerType::SFixed, 23, -8)) { this->value.real = value; }
-    VhdlValue(int64_t value): value(), vhdl_type(VhdlType(VhdlInnerType::Integer, 64, 0)) { this->value.long_integer = value; }
+    VhdlValue(int value): value(), vhdl_type(VhdlType(VhdlInnerType::Integer)) { this->value.integer = value; }
+    VhdlValue(double value): value(), vhdl_type(VhdlType(VhdlInnerType::SFixed, 8, -23)) { this->value.real = value; }
+    VhdlValue(int64_t value): value(), vhdl_type(VhdlType(VhdlInnerType::Integer)) { this->value.long_integer = value; }
 
     /** Creates a "default value" for a given VHDL type */
     VhdlValue(VhdlType type): value(), vhdl_type(type) {
@@ -139,12 +139,14 @@ class VhdlCodeBlock : public std::ostream, public std::enable_shared_from_this<V
             indent();
             return 0;
         }
+        
         void indent()
         {
             _output << std::string(_indent_level, '\t') << str();
             str("");
             _output.flush();
         }
+
 
         void output_buffer(std::ostream& out) const {
             out << _output.str();
@@ -167,19 +169,22 @@ class VhdlCodeBlock : public std::ostream, public std::enable_shared_from_this<V
     void close_block() {
         _buffer.close_block();
     }
+    
 
     friend std::ostream& operator<<(std::ostream& out, const VhdlCodeBlock& block);
 };
 
-/**
+/*
  * Holds information about series of registers.
  * Note that 'source' is optional, in the absence of a value it is assumed that the register series
  * carries the 'ap_start' signal.
  */
+ 
 struct RegisterSeriesInfo {
     std::string name;
     std::optional<size_t> source;
     int registers_count;
+    VhdlType type;
 };
 
 /**
@@ -197,6 +202,9 @@ class VhdlCodeContainer
     VhdlCodeBlock _entities;
     VhdlCodeBlock _signals;
     VhdlCodeBlock _components;
+    
+    VhdlCodeBlock _conversionIn;
+    VhdlCodeBlock _conversionOut;
 
     // Keeps track of which entities are already declared, to avoid generating the same
     // code twice
@@ -240,14 +248,16 @@ class VhdlCodeContainer
 
     std::string entityName(const std::string& name, VhdlType type) const;
 
-    /**
+    /*
      * COMPONENT GENERATORS
      */
     size_t generateRegisterSeries(int n, VhdlType type);
     void generateDelay(size_t hash, VhdlType type);
+    void generateFloatCast(size_t hash, VhdlType type);
     void generateConstant(size_t hash, VhdlValue value);
     void generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input);
     void generateBinaryOperator(size_t hash, int kind, VhdlType type);
+    void convertIn(VhdlType type, int i);
 
     friend std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container);
 };

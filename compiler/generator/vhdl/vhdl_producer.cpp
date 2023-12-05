@@ -1,6 +1,7 @@
 #include "vhdl_producer.hh"
 #include <algorithm>
 #include <functional>
+#include <iostream>
 
 int Vertex::input_counter = 0;
 int Vertex::output_counter = 0;
@@ -48,16 +49,17 @@ void VhdlProducer::visit(Tree signal)
     else {
         // Initialize a new vertex
         _visit_stack.push(VisitInfo(vertex_id));
+        
         addVertex(Vertex(signal));
-
         // Then visit its children.
         SignalVisitor::visit(signal);
-
         // Finally, we create edges from the children to the current vertex.
         _visit_stack.pop();
         if (!_visit_stack.empty()) {
             VisitInfo last_visited   = _visit_stack.top();
+            
             int       register_count = _vertices[last_visited.vertex_index].is_output() ? FPGA_SAMPLE_RATE : 0;
+            
             _edges[vertex_id].push_back(
                 Edge(last_visited.vertex_index, register_count, _vertices[vertex_id].propagation_delay));
 
@@ -76,6 +78,7 @@ void VhdlProducer::visit(Tree signal)
                                              _vertices[vertex_id].propagation_delay));
         }
     }
+    
 }
 
 void VhdlProducer::optimize()
@@ -113,6 +116,7 @@ void VhdlProducer::instantiate_components(VhdlCodeContainer& container)
         ++i;
     }
 }
+
 void VhdlProducer::map_ports(VhdlCodeContainer& container)
 {
     // Iterates over all edges to map ports accordingly

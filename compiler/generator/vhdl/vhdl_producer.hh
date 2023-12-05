@@ -26,6 +26,7 @@ This program is distributed in the hope that it will be useful,
 #include "sigtyperules.hh"
 #include <fstream>
 #include <optional>
+#include <iostream>
 
 typedef std::vector<int> Retiming;
 // Target sample rate in kHz
@@ -134,30 +135,15 @@ class VhdlProducer : public SignalVisitor {
     std::string _name;
     int _inputs_count;
     int _outputs_count;
+    Tree _signal;
 
     /** Visits the signal tree recursively to transform it into a weighted graph */
     virtual void visit(Tree signal) override;
 
    public:
     VhdlProducer(Tree signal, const std::string& name, int numInputs, int numOutputs)
-    : _name(name), _inputs_count(numInputs), _outputs_count(numOutputs)
+    : _signal(signal), _name(name), _inputs_count(numInputs), _outputs_count(numOutputs)
     {
-        // Convert the input signal to a weighted circuit graph
-        visitRoot(signal);
-
-        // Parse the components file to get pipeline stages information (optional)
-        if (!gGlobal->gVHDLComponentsFile.empty()) {
-            std::ifstream components_file(gGlobal->gVHDLComponentsFile);
-            if (!components_file) {
-                std::cerr << "ASSERT : failed to read file : " << gGlobal->gVHDLComponentsFile << std::endl;
-                faustassert(false);
-            }
-            parseCustomComponents(components_file);
-            components_file.close();
-
-            // We only need to normalize the graph if we're using user-defined components
-            normalize();
-        }
     }
 
     void addVertex(Vertex v)
@@ -180,6 +166,25 @@ class VhdlProducer : public SignalVisitor {
 
     /** Applies an optimal retiming to the circuit, minimizing the feasible clock period */
     void retiming();
+
+    void initializeFromSignal() {
+        // Convert the input signal to a weighted circuit graph
+        visitRoot(_signal);
+
+        // Parse the components file to get pipeline stages information (optional)
+        if (!gGlobal->gVHDLComponentsFile.empty()) {
+            std::ifstream components_file(gGlobal->gVHDLComponentsFile);
+            if (!components_file) {
+                std::cerr << "ASSERT : failed to read file : " << gGlobal->gVHDLComponentsFile << std::endl;
+                faustassert(false);
+            }
+            parseCustomComponents(components_file);
+            components_file.close();
+
+            // We only need to normalize the graph if we're using user-defined components
+            normalize();
+        }
+    }
 
    protected:
     /**
@@ -268,15 +273,29 @@ class VhdlProducer : public SignalVisitor {
      */
     void parseCustomComponents(std::istream& input);
 
+    
     /** Overrides the TreeTraversal::self method to handle recursion */
+    
     virtual void self(Tree t) override
-    {
+    {   
+        int     i;
+        Tree    x, y;
+        
+      std::cout << "début de self " << *t << std::endl;
+        if ( !_visit_stack.empty()){
+            
+            std::cout << "le haut de la pile: " << _visit_stack.top().vertex_index << std::endl;
+        } 
+        
+
         if (fTrace) traceEnter(t);
         fIndent++;
+        
         if (!fVisited.count(t)) {
-            fVisited[t] = 0;
-            visit(t);
-        } else {
+                fVisited[t] = 0;
+                visit(t); 
+        }else if(isProj(t, &i, x)){
+            
             int vertex_id = _vertices.size();
             auto existing_id = searchNode(t->hashkey());
             // If the signal was already seen before and our subtree goes to a recursive output,
@@ -286,11 +305,26 @@ class VhdlProducer : public SignalVisitor {
                 int virtual_input_id = _virtual_io_stack.top();
                 _edges[virtual_input_id].push_back(Edge(vertex_id, 0, 0));
             }
+        }else{
+            auto existing_id = searchNode(t->hashkey());
+            std::cout << "visitstack: " << _visit_stack.empty() << std::endl;
+            if(existing_id.has_value() && !_visit_stack.empty()){
+                int vertex_id = _visit_stack.top().vertex_index;
+                _edges[existing_id.value()].push_back(Edge(vertex_id, 0, 0));
+            }
+            
+
         }
 
+        std::cout << "fin de self " << *t << std::endl;
+            
         // Keep visit counter
         fVisited[t]++;
         fIndent--;
         if (fTrace) traceExit(t);
+
+        
     }
+    
+    
 };
