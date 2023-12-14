@@ -116,6 +116,9 @@ struct VhdlPort {
 };
 std::ostream& operator<<(std::ostream& out, const VhdlPort& port);
 
+std::string entityTypeFromName(const std::string& name);
+VhdlType TypeFromName(const std::string& name);
+
 /** Handles indentation automatically, to avoid repeating '\t' everywhere which is error prone */
 class VhdlCodeBlock : public std::ostream, public std::enable_shared_from_this<VhdlCodeBlock>
 {
@@ -216,10 +219,12 @@ class VhdlCodeContainer
     std::map<size_t, std::vector<std::pair<size_t, size_t>>> _mappings;
     // Information about initialized register series
     std::vector<RegisterSeriesInfo> _register_series;
+    
 
     // Mappings specific to outputs and/or recursive storage
     std::vector<size_t> _output_mappings;
     std::map<size_t, size_t> _one_sample_delay_mappings;
+    std::map <size_t, size_t> _delays;
 
     // Stores code for custom operators
     std::map<size_t, std::string> _custom_operators;
@@ -242,6 +247,7 @@ class VhdlCodeContainer
     // Registers a new unique component, declaring its related signals and generic
     // component if necessary
     void register_component(const Vertex& component, std::optional<int> cycles_from_input = std::nullopt);
+    void fill_delays(size_t delay_hash,size_t constant);
 
     // Connects two nodes with the given amount of lag i.e registers in between source and target
     void connect(const Vertex& source, const Vertex& target, int lag);

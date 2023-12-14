@@ -48,7 +48,11 @@ void VhdlProducer::visit(Tree signal)
     // General case
     else {
         // Initialize a new vertex
-        _visit_stack.push(VisitInfo(vertex_id));
+        if(isSigDelay(signal, x, y)){
+            _visit_stack.push(VisitInfo::make_delay(vertex_id));
+        }else{
+            _visit_stack.push(VisitInfo(vertex_id));
+        }
         
         addVertex(Vertex(signal));
         // Then visit its children.
@@ -62,6 +66,13 @@ void VhdlProducer::visit(Tree signal)
             
             _edges[vertex_id].push_back(
                 Edge(last_visited.vertex_index, register_count, _vertices[vertex_id].propagation_delay));
+
+            if (last_visited.is_delay){
+                if(isSigInt(signal, &i)){
+                    int last_visited_id= last_visited.vertex_index;
+                    delays.insert({_vertices[last_visited_id].node_hash,_vertices[vertex_id].node_hash});
+                } 
+            }
 
             if (last_visited.is_recursive) {
                 _visit_stack.pop();
@@ -96,9 +107,11 @@ void VhdlProducer::generate(std::ostream& out)
             }
     }
     auto container = VhdlCodeContainer(_name, _inputs_count, _outputs_count, max_cycles_to_output, {});
-
+    
+    generic_mappings(container);
     instantiate_components(container);
     map_ports(container);
+    
 
     // Output to file
     out << container;
@@ -117,6 +130,7 @@ void VhdlProducer::instantiate_components(VhdlCodeContainer& container)
     }
 }
 
+
 void VhdlProducer::map_ports(VhdlCodeContainer& container)
 {
     // Iterates over all edges to map ports accordingly
@@ -128,6 +142,16 @@ void VhdlProducer::map_ports(VhdlCodeContainer& container)
         }
     }
 }
+
+void VhdlProducer::generic_mappings(VhdlCodeContainer& container)
+{
+    for (auto element : delays){
+        auto delay_hash = element.first;
+        auto constant_hash = element.second;
+        container.fill_delays(delay_hash, constant_hash);
+    }
+}
+
 
 /**
  * NORMALIZATION
@@ -381,3 +405,7 @@ int VhdlProducer::cyclesFromInput(int vertex) const
 
     return incoming_weight[vertex];
 }
+
+
+
+

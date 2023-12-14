@@ -25,29 +25,14 @@
 #include "sigtyperules.hh"
 #include "xtended.hh"
 
+
+//
+//*functions to print the final vhdl code*/
+//
+
 std::ostream& operator<<(std::ostream& out, const VhdlCodeBlock& block) {
     block._buffer.output_buffer(out);
     return out;
-}
-
-std::string entityTypeFromName(const std::string& name) {
-    std::string entity_type;
-    auto last_underscore = name.find_last_of('_');
-    for (size_t i = 0; i < last_underscore && i < name.size(); ++i) {
-        entity_type.push_back(name[i]);
-    }
-    return entity_type;
-}
-
-VhdlType TypeFromName(const std::string& name) {
-    if (name.find("SFixed8_m23") != std::string::npos) {
-        return VhdlType(VhdlInnerType::SFixed, 8, -23);
-    }else if (name.find("Integer") != std::string::npos){
-        return VhdlType(VhdlInnerType::Integer);
-    }
-
-    // Si le motif n'est pas trouvé, vous pouvez renvoyer un type par défaut, par exemple Any.
-    return VhdlType(VhdlInnerType::Any);
 }
 
 std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) {
@@ -134,6 +119,9 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
         auto target_hash = mapping.first;
         auto target_id = container._signal_identifier.at(target_hash);
         out << "pm_" << target_id << " : " << entityTypeFromName(target_id) << std::endl;
+        if (auto search = container._delays.find(target_hash); search != container._delays.end()){
+            out << '\t' << "generic map (n => " << container._delays.at(target_hash) << ")" << std::endl;
+        }
         out << '\t' << "port map (" << std::endl;
         out << "\t\t" << "clock => ap_clk," << std::endl;
         out << "\t\t" << "reset => ap_rst_n," << std::endl;
@@ -201,6 +189,209 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
     return out;
 }
 
+//fill _output_mapping and conversions
+
+void VhdlCodeContainer::connect(const Vertex& source, const Vertex& target, int lag)
+{
+    // Find the source and target identifiers
+    size_t source_hash = source.node_hash;
+    size_t target_hash = target.node_hash;
+
+    //Define the vhdl type
+    VhdlType sig_type;
+    switch (source.nature) {
+        case Nature::kInt: sig_type = VhdlType(VhdlInnerType::Integer); break;
+        case Nature::kAny:
+        case Nature::kReal: sig_type = VhdlType((gGlobal->gVHDLFloatEncoding ? VhdlInnerType::RealFloat : VhdlInnerType::SFixed), 8, -23);
+    }
+
+    // Finally, add the connection in the correct mappings table
+    if (target.is_output() && !target.is_recursive()) {
+        _output_mappings.push_back(source_hash);
+        
+        //fill _conversionOut container with conversion info
+        auto source_id = _signal_identifier.at(source_hash);
+        
+        for (int i=0; i<_num_outputs; i++){
+            if (sig_type.type == VhdlInnerType::SFixed){
+                _signals << std::endl << "signal aud_out_" << i << " : std_logic_vector (31 downto 0);" << std::endl;
+                _conversionOut << "aud_out_" << i << " <= " << " to_Std_Logic_Vector (" << source_id << ");" << std::endl;
+                _conversionOut << "audio_out_" << i << " <= " << " aud_out_" << i << "(23 downto 0);" << std::endl;
+            }else if(sig_type.type == VhdlInnerType::Integer){
+                _conversionOut << "audio_out_" << i << " <= " << " conv_Std_Logic_Vector (" << source_id << ", 24);" << std::endl;
+            }
+
+        }
+        
+        
+    } else {
+        // Create the lag component if necessary, returning the resulting id or 0
+        size_t registers_id = (lag && !target.is_output()) ? generateRegisterSeries(lag, sig_type) : 0;
+        //registers_id=0 is kept for ap_start
+        if (!(registers_id==0)) {
+            _register_series[registers_id].source = std::make_optional(source_hash);
+        }
+        _mappings.find(target_hash)->second.push_back({ source_hash, registers_id });
+    }
+}
+
+void VhdlCodeContainer::convertIn(VhdlType type, int i){
+    if(type.type == VhdlInnerType::SFixed){
+        _signals << std::endl << "signal data_in_" << i <<" : sfixed (0 downto -23);" << std::endl;
+        _signals << "signal aud_in_" << i <<" : sfixed (8 downto -23);" << std::endl;
+        _conversionIn << std::endl << "data_in_" << i <<" <= to_sfixed (audio_in_" << i << ", 0, -23);" << std::endl;
+        _conversionIn << "aud_in_" << i <<" <= resize (data_in_" << i << ", 8, -23);" << std::endl;
+    }
+}
+
+//
+//*some useful fonctions*/
+//
+
+void VhdlCodeContainer::fill_delays(size_t delay_hash,size_t constant){
+    _delays.insert({delay_hash,constant});
+}
+
+std::string entityTypeFromName(const std::string& name) {
+    std::string entity_type;
+    auto last_underscore = name.find_last_of('_');
+    for (size_t i = 0; i < last_underscore && i < name.size(); ++i) {
+        entity_type.push_back(name[i]);
+    }
+    return entity_type;
+}
+
+VhdlType TypeFromName(const std::string& name) {
+    if (name.find("SFixed8_m23") != std::string::npos) {
+        return VhdlType(VhdlInnerType::SFixed, 8, -23);
+    }else if (name.find("Integer") != std::string::npos){
+        return VhdlType(VhdlInnerType::Integer);
+    }
+
+    return VhdlType(VhdlInnerType::Any);
+}
+
+
+
+std::string VhdlType::to_string() const
+{
+    std::stringstream s;
+    switch (type) {
+        case VhdlInnerType::Bit: s << "Bit"; break;
+        case VhdlInnerType::BitVector: s << "BitVector"; break;
+        case VhdlInnerType::Boolean: s << "Boolean"; break;
+        case VhdlInnerType::BooleanVector: s << "BooleanVector"; break;
+        case VhdlInnerType::Integer: s << "Integer"; break;
+        case VhdlInnerType::IntegerVector: s << "IntegerVector"; break;
+        case VhdlInnerType::Natural: s << "Natural"; break;
+        case VhdlInnerType::Positive: s << "Positive"; break;
+        case VhdlInnerType::Character: s << "Character"; break;
+        case VhdlInnerType::String: s << "String"; break;
+        case VhdlInnerType::RealFloat: s << "Real"; break;
+        case VhdlInnerType::StdLogic: s << "Logic"; break;
+        case VhdlInnerType::StdLogicVector: s << "LogicVector"; break;
+        case VhdlInnerType::StdULogic: s << "ULogic"; break;
+        case VhdlInnerType::StdULogicVector: s << "ULogicVector"; break;
+        case VhdlInnerType::Unsigned: s << "Unsigned"; break;
+        case VhdlInnerType::Signed: s << "Signed"; break;
+        case VhdlInnerType::UFixed: s << "UFixed"; break;
+        case VhdlInnerType::SFixed: s << "SFixed"; break;
+        default: break;
+    }
+    if (msb != lsb) {
+        s << (msb < 0 ? "m" : "") << (msb < 0 ? -msb : msb) << "_" << (lsb < 0 ? "m" : "") << (lsb < 0 ? -lsb : lsb);
+    }
+    return s.str();
+}
+
+
+
+//
+//*fonctions to output variables as vhdl code*/
+//
+
+
+std::string VhdlCodeContainer::entityName(const std::string& name, VhdlType type) const
+{
+    std::stringstream ss;
+    ss << name << type.to_string();
+    return ss.str();
+}
+
+std::ostream& operator<<(std::ostream& out, const VhdlType& type) {
+    switch (type.type) {
+        case VhdlInnerType::Bit: out << "bit"; break;
+        case VhdlInnerType::BitVector: out << "bit_vector"; break;
+        case VhdlInnerType::Boolean: out << "boolean"; break;
+        case VhdlInnerType::BooleanVector: out << "boolean_vector"; break;
+        case VhdlInnerType::Integer: out << "integer"; break;
+        case VhdlInnerType::IntegerVector: out << "integer_vector"; break;
+        case VhdlInnerType::Natural: out << "natural"; break;
+        case VhdlInnerType::Positive: out << "positive"; break;
+        case VhdlInnerType::Character: out << "character"; break;
+        case VhdlInnerType::String: out << "string"; break;
+        case VhdlInnerType::RealFloat: out << "real"; break;
+        case VhdlInnerType::StdLogic: out << "std_logic"; break;
+        case VhdlInnerType::StdLogicVector: out << "std_logic_vector"; break;
+        case VhdlInnerType::StdULogic: out << "std_ulogic"; break;
+        case VhdlInnerType::StdULogicVector: out << "std_ulogic_vector"; break;
+        case VhdlInnerType::Unsigned: out << "unsigned"; break;
+        case VhdlInnerType::Signed: out << "signed"; break;
+        case VhdlInnerType::UFixed: out << "ufixed"; break;
+        case VhdlInnerType::SFixed: out << "sfixed"; break;
+        default: break;
+    }
+    if (type.msb != type.lsb) {
+        out << '(' << type.msb << " downto " << type.lsb << ')';
+    }
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const VhdlPort& port)
+{
+   out << port.name << " : " << port.mode << " " << port.type;
+   return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const PortMode& port) {
+    switch (port) {
+        case PortMode::Input: out << "in"; break;
+        case PortMode::Output: out << "out"; break;
+        case PortMode::InOut: out << "inout"; break;
+        case PortMode::Buffer: out << "buffer"; break;
+    }
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const VhdlValue& value) {
+   switch (value.vhdl_type.type) {
+       case VhdlInnerType::Integer:
+       case VhdlInnerType::Natural:
+       case VhdlInnerType::Positive:
+       case VhdlInnerType::Signed:
+       case VhdlInnerType::Unsigned: out << value.value.integer; break;
+
+       case VhdlInnerType::RealFloat: out << value.value.real; break;
+
+       case VhdlInnerType::UFixed: out << "to_ufixed(" << value.value.real << ", " << value.vhdl_type.msb << ", " << value.vhdl_type.lsb << ")"; break;
+       case VhdlInnerType::SFixed: out << "to_sfixed(" << value.value.real << ", " << value.vhdl_type.msb << ", " << value.vhdl_type.lsb << ")"; break;
+
+       case VhdlInnerType::StdLogic: out << (value.value.boolean ? "'1'" : "'0'"); break;
+       default: {
+            std::cerr << __FILE__ << ":" << __LINE__ << " ASSERT : values of type " << value.vhdl_type << " are not yet implemented" << std::endl;
+            faustassert(false);
+       }
+   }
+
+   return out;
+}
+
+
+//
+//*fonctions to fill the VhdlCodeBlocks with the code corresponding to each node*/
+//
+
+
 void VhdlCodeContainer::register_component(const Vertex& component, std::optional<int> cycles_from_input)
 {
     if (!component.is_output()) {
@@ -211,7 +402,7 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
     int      i;
     int64_t  i64;
     double   r;
-    Tree     x, y;
+    Tree     x, y, l, cur, min, max, step;
     xtended* user_data = (xtended*)getUserData(sig);
     VhdlType sig_type;
     switch (component.nature) {
@@ -255,8 +446,9 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
         generateDelay(component.node_hash, sig_type);
     } else if (isSigBinOp(sig, &i, x, y)) {
         generateBinaryOperator(component.node_hash, i, sig_type);
+    //new operators
     } else if (isSigFloatCast(sig, x)) {
-
+        generateFloatCast(component.node_hash, sig_type);
     }
 
     // TODO: implement missing operators, see the original SignalVisitor implementation
@@ -269,50 +461,304 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
     
 }
 
-void VhdlCodeContainer::connect(const Vertex& source, const Vertex& target, int lag)
+void VhdlCodeContainer::generateBinaryOperator(size_t hash, int kind, VhdlType type)
 {
-    // Find the source and target identifiers
-    size_t source_hash = source.node_hash;
-    size_t target_hash = target.node_hash;
-
-    //Define the vhdl type
-    VhdlType sig_type;
-    switch (source.nature) {
-        case Nature::kInt: sig_type = VhdlType(VhdlInnerType::Integer); break;
-        case Nature::kAny:
-        case Nature::kReal: sig_type = VhdlType((gGlobal->gVHDLFloatEncoding ? VhdlInnerType::RealFloat : VhdlInnerType::SFixed), 8, -23);
+    std::string operator_name;
+    std::string operator_symbol = gBinOpTable[kind]->fName;
+    switch (kind) {
+        case SOperator::kAdd: { operator_name = "Add"; break; }
+        case SOperator::kSub: { operator_name = "Sub"; break; }
+        case SOperator::kMul: { operator_name = "Mul"; break; }
+        case SOperator::kDiv: { operator_name = "Div"; break; }
+        case SOperator::kRem: { operator_name = "Rem"; operator_symbol = "mod"; break; }
+        case SOperator::kLsh: { operator_name = "LeftShift"; break; }
+        case SOperator::kARsh: { operator_name = "ArithRightShift"; break; }
+        case SOperator::kLRsh: { operator_name = "LogicRightShift"; break; }
+        case SOperator::kGT: { operator_name = "GreaterThan"; break; }
+        case SOperator::kLT: { operator_name = "LesserThan"; break; }
+        case SOperator::kGE: { operator_name = "GreaterEqual"; break; }
+        case SOperator::kLE: { operator_name = "LesserEqual"; break; }
+        case SOperator::kEQ: { operator_name = "Equal"; break; }
+        case SOperator::kNE: { operator_name = "NotEqual"; break; }
+        case SOperator::kAND: { operator_name = "And"; break; }
+        case SOperator::kOR: { operator_name = "Or"; break; }
+        case SOperator::kXOR: { operator_name = "Xor"; break; }
     }
+    
+    std::string entity_name = entityName(operator_name, type);
 
-    // Finally, add the connection in the correct mappings table
-    if (target.is_output() && !target.is_recursive()) {
-        _output_mappings.push_back(source_hash);
-        
-        //fill _conversionOut container with conversion info
-        auto source_id = _signal_identifier.at(source_hash);
-        int pos= _output_mappings.size() - 1;
-
-        if (sig_type.type == VhdlInnerType::SFixed){
-            _signals << std::endl << "signal aud_out_" << pos << " : std_logic_vector (31 downto 0);" << std::endl;
-            _conversionOut << "aud_out_" << pos << " <= " << " to_Std_Logic_Vector (" << source_id << ");" << std::endl;
-            _conversionOut << "audio_out_" << pos << " <= " << " aud_out_" << pos  << "(23 downto 0);" << std::endl;
-        }else if(sig_type.type == VhdlInnerType::Integer){
-            _conversionOut << "audio_out_" << pos << " <= " << " conv_Std_Logic_Vector (" << source_id << ", 24);" << std::endl;
+    int instance_identifier;
+    auto entry = _declared_entities.find(entity_name);
+    // If the generic entity is already declared, we do not redeclare it
+    if (entry == _declared_entities.end())
+    {
+        _declared_entities.insert({entity_name, 0});
+        _entities << "library ieee;" << std::endl;
+        _entities << "use ieee.std_logic_1164.all;" << std::endl;
+        _entities << "use ieee.numeric_std.all;" << std::endl;
+        _entities << "use ieee.std_logic_arith.all;" << std::endl;
+        _entities << "use ieee.std_logic_signed.all;" << std::endl;
+        _entities << "use work.fixed_float_types.all;" << std::endl;
+        // Include the right package for real numbers encoding
+        if (gGlobal->gVHDLFloatEncoding) {
+            _entities << "use work.float_pkg.all;" << std::endl;
+        } else {
+            _entities << "use work.fixed_pkg.all;" << std::endl;
         }
-
         
+        _entities << std::endl << "entity " << entity_name << " is" << std::endl;
+        _entities.open_block();
+        _entities << "port (" << std::endl;
+        _entities.open_block();
+        _entities << "clock: in std_logic;" << std::endl;
+        _entities << "reset: in std_logic;" << std::endl;
+        _entities << "data_in_0: in " << type << ";" << std::endl;
+        _entities << "data_in_1: in " << type << ";" << std::endl;
+        _entities << "data_out: out " << type << std::endl;
+        _entities.close_block();
+        _entities << ");" << std::endl;
+        _entities.close_block();
+        _entities << "end entity " << entity_name << ";" << std::endl;
+
+        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
+        if (kind >= SOperator::kGT && kind <= SOperator::kXOR) {
+            _entities.open_block();
+            _entities << "signal bool: boolean := data_in_1 "<< operator_symbol << " data_in_0;" << std::endl;
+            _entities.close_block();
+            _entities << std::endl<< "begin"  << std::endl ;
+            _entities.open_block();
+            _entities << "data_out <= 1 when bool = true else "  << std::endl;
+            _entities << "0; " << std::endl;
+            _entities.close_block();
+        }else if (kind >= SOperator::kDiv && kind <= SOperator::kRem){
+            _entities << "begin" << std::endl;
+            _entities.open_block();
+            if(type.type == VhdlInnerType::SFixed){
+                _entities << "data_out <= to_sfixed(0, 8, -23) when data_in_1 <= to_sfixed(0, 8, -23) else " << std::endl;
+                _entities.open_block();
+                _entities << "resize(data_in_0 " << operator_symbol << " data_in_1 , 8, -23);" << std::endl;
+
+            }else{
+                _entities << "data_out <= 0 when data_in_1 = 0 else " << std::endl;
+                _entities.open_block();
+                _entities << "data_in_0 " << operator_symbol << " data_in_1;" << std::endl;
+            }
+            _entities.close_block();
+            _entities.close_block();
+        }else{
+            _entities << "begin" << std::endl;
+            _entities.open_block();
+            if(type.type == VhdlInnerType::SFixed){
+                _entities << "data_out <= resize(data_in_0 " << operator_symbol << " data_in_1 , 8, -23);" << std::endl;
+            }else{
+                _entities << "data_out <= data_in_0 " << operator_symbol << " data_in_1;" << std::endl;
+            }
+            _entities.close_block();
+        }
+        _entities << "end architecture Behavioral;" << std::endl << std::endl;
+
+        _components << "component " << entity_name << " is" << std::endl;
+        _components.open_block();
+        _components << "port (" << std::endl;
+        _components.open_block();
+        _components << "clock: in std_logic;" << std::endl;
+        _components << "reset: in std_logic;" << std::endl;
+        _components << "data_in_0: in " << type << ";" << std::endl;
+        _components << "data_in_1: in " << type << ";" << std::endl;
+        _components << "data_out: out " << type << std::endl;
+        _components.close_block();
+        _components << ");" << std::endl;
+        _components.close_block();
+        _components << "end component " << entity_name << ";" << std::endl << std::endl;
+
+        instance_identifier = 0;
     } else {
-        // Create the lag component if necessary, returning the resulting id or 0
-        size_t registers_id = (lag && !target.is_output()) ? generateRegisterSeries(lag, sig_type) : 0;
-        _register_series[registers_id].source = std::make_optional(source_hash);
-        _mappings.find(target_hash)->second.push_back({ source_hash, registers_id });
+        entry->second += 1;
+        instance_identifier = entry->second;
     }
+
+    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
 }
 
-std::string VhdlCodeContainer::entityName(const std::string& name, VhdlType type) const
+void VhdlCodeContainer::generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input)
 {
-    std::stringstream ss;
-    ss << name << type.to_string();
-    return ss.str();
+    std::string entity_name = entityName("OneSampleDelay", type);
+
+    int instance_identifier;
+    auto entry = _declared_entities.find(entity_name);
+    // If the generic entity is already declared, we do not redeclare it
+    if (entry == _declared_entities.end()) {
+        _declared_entities.insert({entity_name, 0});
+	
+        _entities << "library ieee;" << std::endl;
+        _entities << "use ieee.std_logic_1164.all;" << std::endl;
+        _entities << "use ieee.numeric_std.all;" << std::endl;
+        _entities << "use ieee.std_logic_arith.all;" << std::endl;
+        _entities << "use ieee.std_logic_signed.all;" << std::endl;
+        _entities << "use work.fixed_float_types.all;" << std::endl;
+        // Include the right package for real numbers encoding
+        if (gGlobal->gVHDLFloatEncoding) {
+            _entities << "use work.float_pkg.all;" << std::endl;
+        } else {
+            _entities << "use work.fixed_pkg.all;" << std::endl;
+        }
+        
+        _entities << "entity " << entity_name << " is" << std::endl;
+        _entities.open_block();
+        _entities << "port (" << std::endl;
+        _entities.open_block();
+        _entities << "clock: in std_logic;" << std::endl;
+        _entities << "reset: in std_logic;" << std::endl;
+        _entities << "write_enable: in std_logic;" << std::endl;
+        _entities << "data_in_0: in " << type << ";" << std::endl;
+        _entities << "data_out: out " << type << std::endl;
+        _entities.close_block();
+        _entities << ");" << std::endl;
+        _entities.close_block();
+        _entities << "end entity " << entity_name << ";" << std::endl;
+
+        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
+        _entities << "signal data : " << type << ";" << std::endl;
+        _entities << "begin" << std::endl;
+        _entities.open_block();
+        _entities << "process (clock, reset)" << std::endl;
+        _entities << "begin" << std::endl;
+        _entities.open_block();
+        _entities << "if (reset = '0') then" << std::endl;
+        _entities.open_block();
+        _entities << "data <= " << VhdlValue(type) << ";" << std::endl;
+        _entities.close_block();
+        _entities << "elsif (clock'event and clock = '1') then" << std::endl;
+        _entities.open_block();
+        _entities << "if (write_enable = '1') then" << std::endl;
+        _entities.open_block();
+        _entities << "data <= data_in_0;" << std::endl;
+        _entities.close_block();
+        _entities << "end if;" << std::endl;
+        _entities.close_block();
+        _entities << "end if;" << std::endl;
+        _entities.close_block();
+        _entities << "end process;" << std::endl;
+        _entities << "data_out <= data;" << std::endl;
+        _entities.close_block();
+        _entities << "end architecture Behavioral;" << std::endl << std::endl;
+
+        _components << "component " << entity_name << " is" << std::endl;
+        _components.open_block();
+        _components << "port (" << std::endl;
+        _components.open_block();
+        _components << "clock: in std_logic;" << std::endl;
+        _components << "reset: in std_logic;" << std::endl;
+        _components << "write_enable: in std_logic;" << std::endl;
+        _components << "data_in_0: in " << type << ";" << std::endl;
+        _components << "data_out: out " << type << std::endl;
+        _components.close_block();
+        _components << ");" << std::endl;
+        _components.close_block();
+        _components << "end component " << entity_name << ";" << std::endl << std::endl;
+
+        instance_identifier = 0;
+    } else {
+        entry->second += 1;
+        instance_identifier = entry->second;
+    }
+
+    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
+
+    // The write_enable port needs to be connected to a series of registers that runs parallel to the
+    // currently computed sample, so that its value is '1' when the result to be saved is ready.
+    auto registers_id = generateRegisterSeries(cycles_from_input, VhdlType(VhdlInnerType::StdLogic));
+    _one_sample_delay_mappings.insert({hash, registers_id});
+}
+
+void VhdlCodeContainer::generateConstant(size_t hash, VhdlValue value)
+{
+    int instance_identifier;
+    auto entry = _declared_entities.find("Constant");
+    if (entry == _declared_entities.end())
+    {
+        _declared_entities.insert({"Constant", 0});
+        instance_identifier = 0;
+    } else {
+        entry->second += 1;
+        instance_identifier = entry->second;
+    }
+    std::string signal_identifier = std::string("constant_") + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : " << value.vhdl_type << " := " << value << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
+}
+
+void VhdlCodeContainer::generateFloatCast(size_t hash, VhdlType type)
+{
+    std::string entity_name = entityName("CastFloat", type);
+
+    int instance_identifier;
+
+    auto entry = _declared_entities.find(entity_name);
+    // If the generic entity is already declared, we do not redeclare it
+    if (entry == _declared_entities.end()) {
+        // TODO: right now, this is just a bypass entity made for basic programs to compile
+        _declared_entities.insert({entity_name, 0});
+	
+        _entities << "library ieee;" << std::endl;
+        _entities << "use ieee.std_logic_1164.all;" << std::endl;
+        _entities << "use ieee.numeric_std.all;" << std::endl;
+        _entities << "use ieee.std_logic_arith.all;" << std::endl;
+        _entities << "use ieee.std_logic_signed.all;" << std::endl;
+        _entities << "use work.fixed_float_types.all;" << std::endl;
+        // Include the right package for real numbers encoding
+        if (gGlobal->gVHDLFloatEncoding) {
+            _entities << "use work.float_pkg.all;" << std::endl;
+        } else {
+            _entities << "use work.fixed_pkg.all;" << std::endl;
+        }
+        
+        _entities << "entity " << entity_name << " is" << std::endl;
+        _entities.open_block();
+        _entities << "port (" << std::endl;
+        _entities.open_block();
+        _entities << "clock: in std_logic;" << std::endl;
+        _entities << "reset: in std_logic;" << std::endl;
+        _entities << "data_in_0: in integer; " << std::endl;
+        _entities << "data_out: out " << type << std::endl;
+        _entities.close_block();
+        _entities << ");" << std::endl;
+        _entities.close_block();
+        _entities << "end entity " << entity_name << ";" << std::endl;
+
+        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
+        _entities << "begin" << std::endl;
+        _entities.open_block();
+        _entities << "data_out <= to_sfixed(data_in_0, 8, -23);" << std::endl;
+        _entities.close_block();
+        _entities << "end architecture Behavioral;" << std::endl << std::endl;
+
+        _components << "component " << entity_name << " is" << std::endl;
+        _components.open_block();
+        _components << "port (" << std::endl;
+        _components.open_block();
+        _components << "clock: in std_logic;" << std::endl;
+        _components << "reset: in std_logic;" << std::endl;
+        _components << "data_in_0: in integer;" << std::endl;
+        _components << "data_out: out " << type << std::endl;
+        _components.close_block();
+        _components << ");" << std::endl;
+        _components.close_block();
+        _components << "end component " << entity_name << ";" << std::endl << std::endl;
+
+        instance_identifier = 0;
+    } else {
+        entry->second += 1;
+        instance_identifier = entry->second;
+    }
+
+    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
 }
 
 size_t VhdlCodeContainer::generateRegisterSeries(int n, VhdlType type)
@@ -457,8 +903,13 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
             _entities << "use work.fixed_pkg.all;" << std::endl;
         }
         
-        _entities << "entity " << entity_name << " is" << std::endl;
+        _entities << std::endl << "entity " << entity_name << " is" << std::endl;
         _entities.open_block();
+        _entities << "generic (" << std::endl;
+        _entities.open_block();
+        _entities << "n: natural := 1"  << std::endl;
+        _entities.close_block();
+        _entities << ");" << std::endl;
         _entities << "port (" << std::endl;
         _entities.open_block();
         _entities << "clock: in std_logic;" << std::endl;
@@ -472,327 +923,56 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
         _entities << "end entity " << entity_name << ";" << std::endl;
 
         _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
-        _entities << "begin" << std::endl;
         _entities.open_block();
-        _entities << "data_out <= data_in_0;" << std::endl;
-        _entities.close_block();
-        _entities << "end architecture Behavioral;" << std::endl << std::endl;
-
-        _components << "component " << entity_name << " is" << std::endl;
-        _components.open_block();
-        _components << "port (" << std::endl;
-        _components.open_block();
-        _components << "clock: in std_logic;" << std::endl;
-        _components << "reset: in std_logic;" << std::endl;
-        _components << "data_in_0: in " << type << ";" << std::endl;
-        _components << "data_in_1: in " << type << ";" << std::endl;
-        _components << "data_out: out " << type << std::endl;
-        _components.close_block();
-        _components << ");" << std::endl;
-        _components.close_block();
-        _components << "end component " << entity_name << ";" << std::endl << std::endl;
-
-        instance_identifier = 0;
-    } else {
-        entry->second += 1;
-        instance_identifier = entry->second;
-    }
-
-    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
-    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
-    _signal_identifier.insert({hash, signal_identifier});
-}
-
-void VhdlCodeContainer::generateFloatCast(size_t hash, VhdlType type)
-{
-    std::string entity_name = entityName("CastFloat", type);
-
-    int instance_identifier;
-
-    auto entry = _declared_entities.find(entity_name);
-    // If the generic entity is already declared, we do not redeclare it
-    if (entry == _declared_entities.end()) {
-        // TODO: right now, this is just a bypass entity made for basic programs to compile
-        _declared_entities.insert({entity_name, 0});
-	
-        _entities << "library ieee;" << std::endl;
-        _entities << "use ieee.std_logic_1164.all;" << std::endl;
-        _entities << "use ieee.numeric_std.all;" << std::endl;
-        _entities << "use ieee.std_logic_arith.all;" << std::endl;
-        _entities << "use ieee.std_logic_signed.all;" << std::endl;
-        _entities << "use work.fixed_float_types.all;" << std::endl;
-        // Include the right package for real numbers encoding
-        if (gGlobal->gVHDLFloatEncoding) {
-            _entities << "use work.float_pkg.all;" << std::endl;
-        } else {
-            _entities << "use work.fixed_pkg.all;" << std::endl;
-        }
+        _entities << "type register_array is array(0 to n - 1) of " << type << ";" << std::endl;
         
-        _entities << "entity " << entity_name << " is" << std::endl;
-        _entities.open_block();
-        _entities << "port (" << std::endl;
-        _entities.open_block();
-        _entities << "clock: in std_logic;" << std::endl;
-        _entities << "reset: in std_logic;" << std::endl;
-        _entities << "data_in: in " << type << ";" << std::endl;
-        _entities << "data_out: out " << type << std::endl;
-        _entities.close_block();
-        _entities << ");" << std::endl;
-        _entities.close_block();
-        _entities << "end entity " << entity_name << ";" << std::endl;
-
-        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
-        _entities << "begin" << std::endl;
-        _entities.open_block();
-        _entities << "data_out <= to_sfixed(data_in, 8, -23);" << std::endl;
-        _entities.close_block();
-        _entities << "end architecture Behavioral;" << std::endl << std::endl;
-
-        _components << "component " << entity_name << " is" << std::endl;
-        _components.open_block();
-        _components << "port (" << std::endl;
-        _components.open_block();
-        _components << "clock: in std_logic;" << std::endl;
-        _components << "reset: in std_logic;" << std::endl;
-        _components << "data_in: in " << type << ";" << std::endl;
-        _components << "data_out: out " << type << std::endl;
-        _components.close_block();
-        _components << ");" << std::endl;
-        _components.close_block();
-        _components << "end component " << entity_name << ";" << std::endl << std::endl;
-
-        instance_identifier = 0;
-    } else {
-        entry->second += 1;
-        instance_identifier = entry->second;
-    }
-
-    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
-    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
-    _signal_identifier.insert({hash, signal_identifier});
-}
-
-void VhdlCodeContainer::generateConstant(size_t hash, VhdlValue value)
-{
-    int instance_identifier;
-    auto entry = _declared_entities.find("Constant");
-    if (entry == _declared_entities.end())
-    {
-        _declared_entities.insert({"Constant", 0});
-        instance_identifier = 0;
-    } else {
-        entry->second += 1;
-        instance_identifier = entry->second;
-    }
-    std::string signal_identifier = std::string("constant_") + std::to_string(instance_identifier);
-    _signals << "signal " << signal_identifier << " : " << value.vhdl_type << " := " << value << ";" << std::endl;
-    _signal_identifier.insert({hash, signal_identifier});
-}
-
-void VhdlCodeContainer::generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input)
-{
-    std::string entity_name = entityName("OneSampleDelay", type);
-
-    int instance_identifier;
-    auto entry = _declared_entities.find(entity_name);
-    // If the generic entity is already declared, we do not redeclare it
-    if (entry == _declared_entities.end()) {
-        _declared_entities.insert({entity_name, 0});
-	
-        _entities << "library ieee;" << std::endl;
-        _entities << "use ieee.std_logic_1164.all;" << std::endl;
-        _entities << "use ieee.numeric_std.all;" << std::endl;
-        _entities << "use ieee.std_logic_arith.all;" << std::endl;
-        _entities << "use ieee.std_logic_signed.all;" << std::endl;
-        _entities << "use work.fixed_float_types.all;" << std::endl;
-        // Include the right package for real numbers encoding
-        if (gGlobal->gVHDLFloatEncoding) {
-            _entities << "use work.float_pkg.all;" << std::endl;
-        } else {
-            _entities << "use work.fixed_pkg.all;" << std::endl;
+        if (type.type == VhdlInnerType::StdLogic) {
+            _entities << "signal registers: register_array := (others => '0');" << std::endl;
+        }else if (type.type == VhdlInnerType::Integer){
+            _entities << "signal registers: register_array := (others => 0);" << std::endl;
+        }else{
+            _entities << "signal registers: register_array := (others => (others => '0'));" << std::endl;
         }
-        
-        _entities << "entity " << entity_name << " is" << std::endl;
-        _entities.open_block();
-        _entities << "port (" << std::endl;
-        _entities.open_block();
-        _entities << "clock: in std_logic;" << std::endl;
-        _entities << "reset: in std_logic;" << std::endl;
-        _entities << "write_enable: in std_logic;" << std::endl;
-        _entities << "data_in_0: in " << type << ";" << std::endl;
-        _entities << "data_out: out " << type << std::endl;
         _entities.close_block();
-        _entities << ");" << std::endl;
-        _entities.close_block();
-        _entities << "end entity " << entity_name << ";" << std::endl;
-
-        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
-        _entities << "signal data : " << type << ";" << std::endl;
         _entities << "begin" << std::endl;
         _entities.open_block();
         _entities << "process (clock, reset)" << std::endl;
         _entities << "begin" << std::endl;
         _entities.open_block();
-        _entities << "if (reset = '0') then" << std::endl;
+        _entities << "if reset = '0' then" << std::endl;
         _entities.open_block();
-        _entities << "data <= " << VhdlValue(type) << ";" << std::endl;
+        if (type.type == VhdlInnerType::StdLogic) {
+            _entities << "registers <= (others => '0');" << std::endl;
+        }else if (type.type == VhdlInnerType::Integer){
+            _entities << "registers <= (others => 0);" << std::endl;
+        }else{
+            _entities << "registers <= (others => (others => '0'));" << std::endl;
+        }
+
         _entities.close_block();
-        _entities << "elsif (clock'event and clock = '1') then" << std::endl;
+        _entities << "elsif rising_edge(clock) then" << std::endl;
         _entities.open_block();
-        _entities << "if (write_enable = '1') then" << std::endl;
+        _entities << "for i in n - 1 downto 1 loop" << std::endl;
         _entities.open_block();
-        _entities << "data <= data_in_0;" << std::endl;
+        _entities << "registers(i) <= registers(i - 1);" << std::endl;
         _entities.close_block();
-        _entities << "end if;" << std::endl;
+        _entities << "end loop;" << std::endl;
+        _entities << "registers(0) <= data_in_0;" << std::endl;
         _entities.close_block();
         _entities << "end if;" << std::endl;
         _entities.close_block();
         _entities << "end process;" << std::endl;
-        _entities << "data_out <= data;" << std::endl;
+        _entities << "data_out <= registers(n - 1);" << std::endl;
         _entities.close_block();
         _entities << "end architecture Behavioral;" << std::endl << std::endl;
 
         _components << "component " << entity_name << " is" << std::endl;
         _components.open_block();
-        _components << "port (" << std::endl;
+        _components << "generic (" << std::endl;
         _components.open_block();
-        _components << "clock: in std_logic;" << std::endl;
-        _components << "reset: in std_logic;" << std::endl;
-        _components << "write_enable: in std_logic;" << std::endl;
-        _components << "data_in_0: in " << type << ";" << std::endl;
-        _components << "data_out: out " << type << std::endl;
+        _components << "n: natural := 1" << std::endl;
         _components.close_block();
         _components << ");" << std::endl;
-        _components.close_block();
-        _components << "end component " << entity_name << ";" << std::endl << std::endl;
-
-        instance_identifier = 0;
-    } else {
-        entry->second += 1;
-        instance_identifier = entry->second;
-    }
-
-    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
-    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
-    _signal_identifier.insert({hash, signal_identifier});
-
-    // The write_enable port needs to be connected to a series of registers that runs parallel to the
-    // currently computed sample, so that its value is '1' when the result to be saved is ready.
-    auto registers_id = generateRegisterSeries(cycles_from_input, VhdlType(VhdlInnerType::StdLogic));
-    _one_sample_delay_mappings.insert({hash, registers_id});
-}
-
-void VhdlCodeContainer::generateBinaryOperator(size_t hash, int kind, VhdlType type)
-{
-    std::string operator_name;
-    std::string operator_symbol = gBinOpTable[kind]->fName;
-    switch (kind) {
-        case SOperator::kAdd: { operator_name = "Add"; break; }
-        case SOperator::kSub: { operator_name = "Sub"; break; }
-        case SOperator::kMul: { operator_name = "Mul"; break; }
-        case SOperator::kDiv: { operator_name = "Div"; break; }
-        case SOperator::kRem: { operator_name = "Rem"; operator_symbol = "mod"; break; }
-        case SOperator::kLsh: { operator_name = "LeftShift"; break; }
-        case SOperator::kARsh: { operator_name = "ArithRightShift"; break; }
-        case SOperator::kLRsh: { operator_name = "LogicRightShift"; break; }
-        case SOperator::kGT: { operator_name = "GreaterThan"; break; }
-        case SOperator::kLT: { operator_name = "LesserThan"; break; }
-        case SOperator::kGE: { operator_name = "GreaterEqual"; break; }
-        case SOperator::kLE: { operator_name = "LesserEqual"; break; }
-        case SOperator::kEQ: { operator_name = "Equal"; break; }
-        case SOperator::kNE: { operator_name = "NotEqual"; break; }
-        case SOperator::kAND: { operator_name = "And"; break; }
-        case SOperator::kOR: { operator_name = "Or"; break; }
-        case SOperator::kXOR: { operator_name = "Xor"; break; }
-    }
-    
-    std::string entity_name = entityName(operator_name, type);
-
-    int instance_identifier;
-    auto entry = _declared_entities.find(entity_name);
-    // If the generic entity is already declared, we do not redeclare it
-    if (entry == _declared_entities.end())
-    {
-        _declared_entities.insert({entity_name, 0});
-        _entities << "library ieee;" << std::endl;
-        _entities << "use ieee.std_logic_1164.all;" << std::endl;
-        _entities << "use ieee.numeric_std.all;" << std::endl;
-        _entities << "use ieee.std_logic_arith.all;" << std::endl;
-        _entities << "use ieee.std_logic_signed.all;" << std::endl;
-        _entities << "use work.fixed_float_types.all;" << std::endl;
-        // Include the right package for real numbers encoding
-        if (gGlobal->gVHDLFloatEncoding) {
-            _entities << "use work.float_pkg.all;" << std::endl;
-        } else {
-            _entities << "use work.fixed_pkg.all;" << std::endl;
-        }
-        
-        _entities << std::endl << "entity " << entity_name << " is" << std::endl;
-        _entities.open_block();
-        _entities << "port (" << std::endl;
-        _entities.open_block();
-        _entities << "clock: in std_logic;" << std::endl;
-        _entities << "reset: in std_logic;" << std::endl;
-        _entities << "data_in_0: in " << type << ";" << std::endl;
-        _entities << "data_in_1: in " << type << ";" << std::endl;
-        _entities << "data_out: out " << type << std::endl;
-        _entities.close_block();
-        _entities << ");" << std::endl;
-        _entities.close_block();
-        _entities << "end entity " << entity_name << ";" << std::endl;
-
-        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
-        if (kind >= SOperator::kGT && kind <= SOperator::kXOR) {
-            _entities.open_block();
-            _entities << "signal bool: boolean;" << std::endl;
-            _entities.close_block();
-            _entities << std::endl<< "begin" << std::endl << "process" << std::endl ;
-            _entities.open_block();
-            _entities << "bool <= data_in_0 " << operator_symbol << " data_in_1;" << std::endl;
-            _entities << "if bool then" << std::endl;
-            _entities.open_block();
-            _entities << "data_out <= 0" << std::endl;
-            _entities.close_block();
-            _entities << "else" << std::endl;
-            _entities.open_block();
-            _entities << "data_out <= 1" << std::endl;
-            _entities.close_block();
-            _entities << "end if;" << std::endl;
-            _entities.close_block();
-            _entities << "end process;" << std::endl;
-        }else if (kind >= SOperator::kDiv && kind <= SOperator::kRem){
-            _entities << "begin" << std::endl << "process" << std::endl;
-            _entities.open_block();
-            _entities << "if data_in_1 = 0 then" << std::endl;
-            _entities.open_block();
-            _entities << "data_out <= 0" << std::endl;
-            _entities.close_block();
-            _entities << "else" << std::endl;
-            _entities.open_block();
-            if(type.type == VhdlInnerType::SFixed){
-                _entities << "data_out <= resize ( data_in_0 " << operator_symbol << " data_in_1 , 8, -23);" << std::endl;
-            }else{
-                _entities << "data_out <= data_in_0 " << operator_symbol << " data_in_1;" << std::endl;
-            }
-            _entities.close_block();
-            _entities << "end if;" << std::endl;
-            _entities.close_block();
-            _entities << "end process;" << std::endl;
-            
-        }else{
-            _entities << "begin" << std::endl;
-            _entities.open_block();
-            if(type.type == VhdlInnerType::SFixed){
-                _entities << "data_out <= resize ( data_in_0 " << operator_symbol << " data_in_1 , 8, -23);" << std::endl;
-            }else{
-                _entities << "data_out <= data_in_0" << operator_symbol << "data_in_1" << std::endl;
-            }
-            _entities.close_block();
-        }
-        _entities << "end architecture Behavioral;" << std::endl << std::endl;
-
-        _components << "component " << entity_name << " is" << std::endl;
-        _components.open_block();
         _components << "port (" << std::endl;
         _components.open_block();
         _components << "clock: in std_logic;" << std::endl;
@@ -815,114 +995,3 @@ void VhdlCodeContainer::generateBinaryOperator(size_t hash, int kind, VhdlType t
     _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
     _signal_identifier.insert({hash, signal_identifier});
 }
-
-void VhdlCodeContainer::convertIn(VhdlType type, int i){
-    if(type.type == VhdlInnerType::SFixed){
-        _signals << std::endl << "signal data_in_" << i <<" : sfixed (0 downto -23);" << std::endl;
-        _signals << "signal aud_in_" << i <<" : sfixed (8 downto -23);" << std::endl;
-        _conversionIn << std::endl << "data_in_" << i <<" <= to_sfixed (audio_in_" << i << ", 0, -23);" << std::endl;
-        _conversionIn << "aud_in_" << i <<" <= resize (data_in_" << i << ", 8, -23);" << std::endl;
-    }
-}
-
-
-    
-std::ostream& operator<<(std::ostream& out, const PortMode& port) {
-    switch (port) {
-        case PortMode::Input: out << "in"; break;
-        case PortMode::Output: out << "out"; break;
-        case PortMode::InOut: out << "inout"; break;
-        case PortMode::Buffer: out << "buffer"; break;
-    }
-    return out;
-}
-
-std::string VhdlType::to_string() const
-{
-    std::stringstream s;
-    switch (type) {
-        case VhdlInnerType::Bit: s << "Bit"; break;
-        case VhdlInnerType::BitVector: s << "BitVector"; break;
-        case VhdlInnerType::Boolean: s << "Boolean"; break;
-        case VhdlInnerType::BooleanVector: s << "BooleanVector"; break;
-        case VhdlInnerType::Integer: s << "Integer"; break;
-        case VhdlInnerType::IntegerVector: s << "IntegerVector"; break;
-        case VhdlInnerType::Natural: s << "Natural"; break;
-        case VhdlInnerType::Positive: s << "Positive"; break;
-        case VhdlInnerType::Character: s << "Character"; break;
-        case VhdlInnerType::String: s << "String"; break;
-        case VhdlInnerType::RealFloat: s << "Real"; break;
-        case VhdlInnerType::StdLogic: s << "Logic"; break;
-        case VhdlInnerType::StdLogicVector: s << "LogicVector"; break;
-        case VhdlInnerType::StdULogic: s << "ULogic"; break;
-        case VhdlInnerType::StdULogicVector: s << "ULogicVector"; break;
-        case VhdlInnerType::Unsigned: s << "Unsigned"; break;
-        case VhdlInnerType::Signed: s << "Signed"; break;
-        case VhdlInnerType::UFixed: s << "UFixed"; break;
-        case VhdlInnerType::SFixed: s << "SFixed"; break;
-        default: break;
-    }
-    if (msb != lsb) {
-        s << (msb < 0 ? "m" : "") << (msb < 0 ? -msb : msb) << "_" << (lsb < 0 ? "m" : "") << (lsb < 0 ? -lsb : lsb);
-    }
-    return s.str();
-}
-
-std::ostream& operator<<(std::ostream& out, const VhdlType& type) {
-    switch (type.type) {
-        case VhdlInnerType::Bit: out << "bit"; break;
-        case VhdlInnerType::BitVector: out << "bit_vector"; break;
-        case VhdlInnerType::Boolean: out << "boolean"; break;
-        case VhdlInnerType::BooleanVector: out << "boolean_vector"; break;
-        case VhdlInnerType::Integer: out << "integer"; break;
-        case VhdlInnerType::IntegerVector: out << "integer_vector"; break;
-        case VhdlInnerType::Natural: out << "natural"; break;
-        case VhdlInnerType::Positive: out << "positive"; break;
-        case VhdlInnerType::Character: out << "character"; break;
-        case VhdlInnerType::String: out << "string"; break;
-        case VhdlInnerType::RealFloat: out << "real"; break;
-        case VhdlInnerType::StdLogic: out << "std_logic"; break;
-        case VhdlInnerType::StdLogicVector: out << "std_logic_vector"; break;
-        case VhdlInnerType::StdULogic: out << "std_ulogic"; break;
-        case VhdlInnerType::StdULogicVector: out << "std_ulogic_vector"; break;
-        case VhdlInnerType::Unsigned: out << "unsigned"; break;
-        case VhdlInnerType::Signed: out << "signed"; break;
-        case VhdlInnerType::UFixed: out << "ufixed"; break;
-        case VhdlInnerType::SFixed: out << "sfixed"; break;
-        default: break;
-    }
-    if (type.msb != type.lsb) {
-        out << '(' << type.msb << " downto " << type.lsb << ')';
-    }
-    return out;
-}
-
-std::ostream& operator<<(std::ostream& out, const VhdlPort& port)
-{
-   out << port.name << " : " << port.mode << " " << port.type;
-   return out;
-}
-
-std::ostream& operator<<(std::ostream& out, const VhdlValue& value) {
-   switch (value.vhdl_type.type) {
-       case VhdlInnerType::Integer:
-       case VhdlInnerType::Natural:
-       case VhdlInnerType::Positive:
-       case VhdlInnerType::Signed:
-       case VhdlInnerType::Unsigned: out << value.value.integer; break;
-
-       case VhdlInnerType::RealFloat: out << value.value.real; break;
-
-       case VhdlInnerType::UFixed: out << "to_ufixed(" << value.value.real << ", " << value.vhdl_type.msb << ", " << value.vhdl_type.lsb << ")"; break;
-       case VhdlInnerType::SFixed: out << "to_sfixed(" << value.value.real << ", " << value.vhdl_type.msb << ", " << value.vhdl_type.lsb << ")"; break;
-
-       case VhdlInnerType::StdLogic: out << (value.value.boolean ? "'1'" : "'0'"); break;
-       default: {
-            std::cerr << __FILE__ << ":" << __LINE__ << " ASSERT : values of type " << value.vhdl_type << " are not yet implemented" << std::endl;
-            faustassert(false);
-       }
-   }
-
-   return out;
-}
-

@@ -782,10 +782,8 @@ static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* ou
 #ifdef VHDL_BUILD
     signals = simplifyToNormalForm(signals);
     VhdlProducer vhdl_prod = VhdlProducer(signals, gGlobal->gClassName, numInputs, numOutputs);
-    vhdl_prod.initializeFromSignal();
-    std::cout << std::endl << "FIN DU CONSTRUCTEUR" <<std::endl; 
-    vhdl_prod.optimize();
-    std::cout << std::endl << "FIN DE OPTIMIZE" <<std::endl; 
+    vhdl_prod.initializeFromSignal(); 
+    vhdl_prod.optimize(); 
 
     if (gGlobal->gVHDLTrace) {
         std::ofstream dot_output("vhdl_graph.dot");

@@ -109,12 +109,20 @@ struct Edge {
 struct VisitInfo {
     int vertex_index;
     bool is_recursive = false;
+    bool is_delay = false;
 
     static VisitInfo make_recursive(int vertex_index) {
         VisitInfo info(vertex_index);
         info.is_recursive = true;
         return info;
     }
+
+    static VisitInfo make_delay(int vertex_index) {
+        VisitInfo info(vertex_index);
+        info.is_delay = true;
+        return info;
+    }
+
 
     VisitInfo(int vertex_index): vertex_index(vertex_index) {}
 };
@@ -126,6 +134,8 @@ class VhdlProducer : public SignalVisitor {
     // Graph
     std::vector<Vertex> _vertices;
     std::vector<std::vector<Edge>> _edges;
+
+    std::map <size_t, size_t> delays;
 
     // Used to create the graph from a signal tree
     std::stack<VisitInfo> _visit_stack;
@@ -167,6 +177,8 @@ class VhdlProducer : public SignalVisitor {
     /** Applies an optimal retiming to the circuit, minimizing the feasible clock period */
     void retiming();
 
+    
+
     void initializeFromSignal() {
         // Convert the input signal to a weighted circuit graph
         visitRoot(_signal);
@@ -192,6 +204,7 @@ class VhdlProducer : public SignalVisitor {
      */
     void instantiate_components(VhdlCodeContainer& container);
     void map_ports(VhdlCodeContainer& container);
+    void generic_mappings(VhdlCodeContainer& container);
 
     /**
      * NORMALIZATION
@@ -281,13 +294,6 @@ class VhdlProducer : public SignalVisitor {
         int     i;
         Tree    x, y;
         
-      std::cout << "début de self " << *t << std::endl;
-        if ( !_visit_stack.empty()){
-            
-            std::cout << "le haut de la pile: " << _visit_stack.top().vertex_index << std::endl;
-        } 
-        
-
         if (fTrace) traceEnter(t);
         fIndent++;
         
@@ -306,17 +312,19 @@ class VhdlProducer : public SignalVisitor {
                 _edges[virtual_input_id].push_back(Edge(vertex_id, 0, 0));
             }
         }else{
-            auto existing_id = searchNode(t->hashkey());
-            std::cout << "visitstack: " << _visit_stack.empty() << std::endl;
+            size_t hash = t->hashkey();
+            auto existing_id = searchNode(hash);
             if(existing_id.has_value() && !_visit_stack.empty()){
                 int vertex_id = _visit_stack.top().vertex_index;
                 _edges[existing_id.value()].push_back(Edge(vertex_id, 0, 0));
+                VisitInfo last_visited   = _visit_stack.top();
+                if (last_visited.is_delay){
+                    if(isSigInt(t, &i)){
+                        delays.insert({_vertices[vertex_id].node_hash,hash});
+                    } 
+                }
             }
-            
-
         }
-
-        std::cout << "fin de self " << *t << std::endl;
             
         // Keep visit counter
         fVisited[t]++;
@@ -325,6 +333,6 @@ class VhdlProducer : public SignalVisitor {
 
         
     }
-    
+  
     
 };
