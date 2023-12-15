@@ -225,6 +225,7 @@ class VhdlCodeContainer
     std::vector<size_t> _output_mappings;
     std::map<size_t, size_t> _one_sample_delay_mappings;
     std::map <size_t, size_t> _delays;
+    std::map <size_t, size_t> _delays_mappings;
 
     // Stores code for custom operators
     std::map<size_t, std::string> _custom_operators;
@@ -258,7 +259,7 @@ class VhdlCodeContainer
      * COMPONENT GENERATORS
      */
     size_t generateRegisterSeries(int n, VhdlType type);
-    void generateDelay(size_t hash, VhdlType type);
+    void generateDelay(size_t hash, VhdlType type, int cycles_from_input);
     void generateFloatCast(size_t hash, VhdlType type);
     void generateConstant(size_t hash, VhdlValue value);
     void generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input);

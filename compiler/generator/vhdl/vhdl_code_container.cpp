@@ -110,16 +110,19 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
     out << container._conversionIn << std::endl;
     
     out << std::endl << "-- ======= PORT MAPPINGS ====" << std::endl;
+
+
     for (auto mapping : container._mappings) {
         // Components that do not depend on anything are constants
-        if (mapping.second.empty()) {
+        auto target_hash = mapping.first;
+        
+        if (mapping.second.empty() && (container._delays.find(target_hash)==container._delays.end())) {
             continue;
         }
 
-        auto target_hash = mapping.first;
         auto target_id = container._signal_identifier.at(target_hash);
         out << "pm_" << target_id << " : " << entityTypeFromName(target_id) << std::endl;
-        if (auto search = container._delays.find(target_hash); search != container._delays.end()){
+        if (!(container._delays.find(target_hash)==container._delays.end())){
             out << '\t' << "generic map (n => " << container._delays.at(target_hash) << ")" << std::endl;
         }
         out << '\t' << "port map (" << std::endl;
@@ -130,6 +133,10 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
         auto write_enable_sig = container._one_sample_delay_mappings.find(target_hash);
         if (write_enable_sig != container._one_sample_delay_mappings.end()) {
             out << "\t\t" << "write_enable => registers_" << write_enable_sig->second << "," << std::endl;
+        }
+
+        if (!(container._delays.find(target_hash)==container._delays.end())){
+            out << "\t\t" << "clock_enable => registers_" << container._delays_mappings.at(target_hash) << "," << std::endl;
         }
 
         for (size_t i = 0; i < mapping.second.size(); ++i) {
@@ -441,9 +448,9 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
     } else if (isSigOutput(sig, &i, x)) {
         
     } else if (isSigDelay1(sig, x)) {
-        generateDelay(component.node_hash, sig_type);
+        generateDelay(component.node_hash, sig_type, *cycles_from_input);
     } else if (isSigDelay(sig, x, y)) {
-        generateDelay(component.node_hash, sig_type);
+        generateDelay(component.node_hash, sig_type,  *cycles_from_input);
     } else if (isSigBinOp(sig, &i, x, y)) {
         generateBinaryOperator(component.node_hash, i, sig_type);
     //new operators
@@ -878,10 +885,10 @@ size_t VhdlCodeContainer::generateRegisterSeries(int n, VhdlType type)
     return _register_series.size() - 1;
 }
 
-void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
+void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type, int cycles_from_input)
 {
     std::string entity_name = entityName("Delay", type);
-
+ 
     int instance_identifier;
 
     auto entry = _declared_entities.find(entity_name);
@@ -914,6 +921,7 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
         _entities.open_block();
         _entities << "clock: in std_logic;" << std::endl;
         _entities << "reset: in std_logic;" << std::endl;
+        _entities << "clock_enable: in std_logic;" << std::endl;
         _entities << "data_in_0: in " << type << ";" << std::endl;
         _entities << "data_in_1: in " << type << ";" << std::endl;
         _entities << "data_out: out " << type << std::endl;
@@ -952,12 +960,16 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
         _entities.close_block();
         _entities << "elsif rising_edge(clock) then" << std::endl;
         _entities.open_block();
+        _entities << "if (clock_enable = '1') then" << std::endl;
+        _entities.open_block();
         _entities << "for i in n - 1 downto 1 loop" << std::endl;
         _entities.open_block();
         _entities << "registers(i) <= registers(i - 1);" << std::endl;
         _entities.close_block();
         _entities << "end loop;" << std::endl;
         _entities << "registers(0) <= data_in_0;" << std::endl;
+        _entities.close_block();
+        _entities << "end if;" << std::endl;
         _entities.close_block();
         _entities << "end if;" << std::endl;
         _entities.close_block();
@@ -977,6 +989,7 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
         _components.open_block();
         _components << "clock: in std_logic;" << std::endl;
         _components << "reset: in std_logic;" << std::endl;
+        _components << "clock_enable: in std_logic;" << std::endl;
         _components << "data_in_0: in " << type << ";" << std::endl;
         _components << "data_in_1: in " << type << ";" << std::endl;
         _components << "data_out: out " << type << std::endl;
@@ -994,4 +1007,9 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type)
     std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
     _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
     _signal_identifier.insert({hash, signal_identifier});
+
+    // The write_enable port needs to be connected to a series of registers that runs parallel to the
+    // currently computed sample, so that its value is '1' when the result to be saved is ready.
+    auto registers_id = generateRegisterSeries(cycles_from_input, VhdlType(VhdlInnerType::StdLogic));
+    _delays_mappings.insert({hash, registers_id});
 }
