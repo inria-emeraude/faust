@@ -20,6 +20,8 @@ void VhdlProducer::visit(Tree signal)
 {
     int vertex_id = _vertices.size();
     int     i;
+    int64_t i64;
+    double r;
     Tree    x, y;
 
     // Handle recursive signals
@@ -141,14 +143,25 @@ void VhdlProducer::map_ports(VhdlCodeContainer& container)
             container.connect(vertex, _vertices[edge.target], edge.register_count);
         }
     }
+    
+    // Generate output mappings with the right conversions
+    container.convertOut();
 }
 
 void VhdlProducer::generic_mappings(VhdlCodeContainer& container)
 {
+    for (auto element : max_delays){
+        auto delay_hash = element.first;
+        auto max_delay = element.second;
+        if (delays.find(delay_hash)==delays.end()){
+            delays.insert({delay_hash, max_delay});
+        }
+    }
+
     for (auto element : delays){
         auto delay_hash = element.first;
-        auto constant_hash = element.second;
-        container.fill_delays(delay_hash, constant_hash);
+        auto delay_value = element.second;
+        container.fill_delays(delay_hash, delay_value);
     }
 }
 

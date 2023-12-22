@@ -24,6 +24,7 @@
 #include "global.hh"
 #include <memory>
 #include <vector>
+#include <variant>
 #include <set>
 #include <map>
 #include <iostream>
@@ -222,10 +223,11 @@ class VhdlCodeContainer
     
 
     // Mappings specific to outputs and/or recursive storage
-    std::vector<size_t> _output_mappings;
-    std::map<size_t, size_t> _one_sample_delay_mappings;
+    std::vector < std::vector <std::variant < size_t, VhdlType >>> _output_mappings;
+    std::map <size_t, size_t> _one_sample_delay_mappings;
     std::map <size_t, size_t> _delays;
     std::map <size_t, size_t> _delays_mappings;
+    std::map <size_t, std::vector<VhdlType>> port_type;
 
     // Stores code for custom operators
     std::map<size_t, std::string> _custom_operators;
@@ -248,7 +250,7 @@ class VhdlCodeContainer
     // Registers a new unique component, declaring its related signals and generic
     // component if necessary
     void register_component(const Vertex& component, std::optional<int> cycles_from_input = std::nullopt);
-    void fill_delays(size_t delay_hash,size_t constant);
+    void fill_delays(size_t delay_hash,int constant);
 
     // Connects two nodes with the given amount of lag i.e registers in between source and target
     void connect(const Vertex& source, const Vertex& target, int lag);
@@ -260,11 +262,15 @@ class VhdlCodeContainer
      */
     size_t generateRegisterSeries(int n, VhdlType type);
     void generateDelay(size_t hash, VhdlType type, int cycles_from_input);
+    void generateBypass(size_t hash, VhdlType type);
     void generateFloatCast(size_t hash, VhdlType type);
+    void generateIntCast(size_t hash, VhdlType type);
     void generateConstant(size_t hash, VhdlValue value);
     void generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input);
     void generateBinaryOperator(size_t hash, int kind, VhdlType type);
+    
     void convertIn(VhdlType type, int i);
+    void convertOut();
 
     friend std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container);
 };

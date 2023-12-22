@@ -91,12 +91,20 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
         auto target_hash = mapping.first;
         auto target_id = container._signal_identifier.at(target_hash);
         for (size_t i = 0; i < mapping.second.size(); ++i) {
-            auto source_hash = mapping.second[i].first;
             auto registers_id = mapping.second[i].second;
             if (registers_id) {
                 auto register_series = container._register_series[registers_id];
-                if (!(TypeFromName(target_id).type == register_series.type.type)){
-                    out << "signal converted_registers_" << registers_id << " : " << TypeFromName(target_id) << " := to_" << TypeFromName(target_id).type << "(registers_" << registers_id << ", 8, -23);" << std::endl;  
+                if (container.port_type.find(target_hash) != container.port_type.end()){
+                    auto ports = container.port_type.at(target_hash);
+                    if (i < ports.size()){
+                        if(ports[i].type != register_series.type.type){
+                            if(ports[i].type== VhdlInnerType::SFixed){
+                                out << "signal converted_registers_" << registers_id << " : sfixed(8 downto -23) := to_sfixed(registers_" << registers_id << ", 8, -23);" << std::endl;
+                            }else if(ports[i].type== VhdlInnerType::Integer){
+                                out << "signal converted_registers_" << registers_id << " : integer := to_integer(registers_" << registers_id << ");" << std::endl;
+                            } 
+                        }
+                    }
                 }
             }
         }
@@ -123,7 +131,9 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
         auto target_id = container._signal_identifier.at(target_hash);
         out << "pm_" << target_id << " : " << entityTypeFromName(target_id) << std::endl;
         if (!(container._delays.find(target_hash)==container._delays.end())){
-            out << '\t' << "generic map (n => " << container._delays.at(target_hash) << ")" << std::endl;
+            if (container._delays.at(target_hash) != 0){
+                out << '\t' << "generic map (n => " << container._delays.at(target_hash) << ")" << std::endl;
+            }  
         }
         out << '\t' << "port map (" << std::endl;
         out << "\t\t" << "clock => ap_clk," << std::endl;
@@ -135,7 +145,7 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
             out << "\t\t" << "write_enable => registers_" << write_enable_sig->second << "," << std::endl;
         }
 
-        if (!(container._delays.find(target_hash)==container._delays.end())){
+        if (!(container._delays_mappings.find(target_hash)==container._delays_mappings.end())){
             out << "\t\t" << "clock_enable => registers_" << container._delays_mappings.at(target_hash) << "," << std::endl;
         }
 
@@ -143,18 +153,23 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
             auto source_hash = mapping.second[i].first;
             auto registers_id = mapping.second[i].second;
 
-
+            
             if (registers_id) {
                 auto register_series = container._register_series[registers_id];
-                if (TypeFromName(target_id).type == (register_series.type.type)){
-                    out << "\t\t" << "data_in_" << i << " => " << "registers_" << registers_id << "," << std::endl;  
-                }else{
-                    out << "\t\t" << "data_in_" << i << " => " << "converted_registers_" << registers_id << "," << std::endl;
-                }
-                
+                if (container.port_type.find(target_hash) != container.port_type.end()){
+                    auto ports = container.port_type.at(target_hash);
+                    if (i < ports.size()){
+                        if(ports[i].type == register_series.type.type){
+                            out << "\t\t" << "data_in_" << i << " => " << "registers_" << registers_id << "," << std::endl; 
+                        }else{
+                            out << "\t\t" << "data_in_" << i << " => " << "converted_registers_" << registers_id << "," << std::endl;
+                        }
+                    }
+                }  
             } else {
                 out << "\t\t" << "data_in_" << i << " => " << container._signal_identifier.at(source_hash) << "," << std::endl;
             }
+            
         }
         out << "\t\t" << "data_out => " << target_id << std::endl;
         out << "\t" << ");" << std::endl << std::endl;
@@ -196,7 +211,7 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
     return out;
 }
 
-//fill _output_mapping and conversions
+//fill _mappings and _output_mappings
 
 void VhdlCodeContainer::connect(const Vertex& source, const Vertex& target, int lag)
 {
@@ -214,22 +229,7 @@ void VhdlCodeContainer::connect(const Vertex& source, const Vertex& target, int 
 
     // Finally, add the connection in the correct mappings table
     if (target.is_output() && !target.is_recursive()) {
-        _output_mappings.push_back(source_hash);
-        
-        //fill _conversionOut container with conversion info
-        auto source_id = _signal_identifier.at(source_hash);
-        
-        for (int i=0; i<_num_outputs; i++){
-            if (sig_type.type == VhdlInnerType::SFixed){
-                _signals << std::endl << "signal aud_out_" << i << " : std_logic_vector (31 downto 0);" << std::endl;
-                _conversionOut << "aud_out_" << i << " <= " << " to_Std_Logic_Vector (" << source_id << ");" << std::endl;
-                _conversionOut << "audio_out_" << i << " <= " << " aud_out_" << i << "(23 downto 0);" << std::endl;
-            }else if(sig_type.type == VhdlInnerType::Integer){
-                _conversionOut << "audio_out_" << i << " <= " << " conv_Std_Logic_Vector (" << source_id << ", 24);" << std::endl;
-            }
-
-        }
-        
+        _output_mappings.push_back({source_hash, sig_type});
         
     } else {
         // Create the lag component if necessary, returning the resulting id or 0
@@ -251,11 +251,39 @@ void VhdlCodeContainer::convertIn(VhdlType type, int i){
     }
 }
 
+// Generate output mappings with the right conversions
+void VhdlCodeContainer::convertOut(){
+
+    for (size_t output = 0; output < _num_outputs; ++output) {
+        size_t output_mapping;
+        if (output < _output_mappings.size()) {
+            output_mapping = output;
+        } else {
+            output_mapping = _output_mappings.size() - 1;
+        }
+
+        auto element = _output_mappings[output_mapping][0];
+        auto element2 = _output_mappings[output_mapping][1];
+        auto source_hash = std::get_if<size_t>(&element);
+        auto type = std::get_if<VhdlType>(&element2);
+        auto source_id = _signal_identifier.at(*source_hash);
+
+        if (type->type == VhdlInnerType::SFixed){
+            _signals << std::endl << "signal aud_out_" << output << " : std_logic_vector (31 downto 0);" << std::endl;
+            _conversionOut << "aud_out_" << output << " <= " << " to_Std_Logic_Vector (" << source_id << ");" << std::endl;
+            _conversionOut << "audio_out_" << output << " <= " << " aud_out_" << output << "(23 downto 0);" << std::endl;
+        }else if(type->type == VhdlInnerType::Integer){
+            _conversionOut << "audio_out_" << output << " <= " << " conv_Std_Logic_Vector (" << source_id  << ", 24);" << std::endl;
+        }
+    }
+}
+
+
 //
 //*some useful fonctions*/
 //
 
-void VhdlCodeContainer::fill_delays(size_t delay_hash,size_t constant){
+void VhdlCodeContainer::fill_delays(size_t delay_hash,int constant){
     _delays.insert({delay_hash,constant});
 }
 
@@ -410,6 +438,7 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
     int64_t  i64;
     double   r;
     Tree     x, y, l, cur, min, max, step;
+
     xtended* user_data = (xtended*)getUserData(sig);
     VhdlType sig_type;
     switch (component.nature) {
@@ -446,17 +475,19 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
         // of the storage medium
         generateOneSampleDelay(component.node_hash, sig_type, *cycles_from_input);
     } else if (isSigOutput(sig, &i, x)) {
-        
+       // Normal outputs do not generate anything 
     } else if (isSigDelay1(sig, x)) {
         generateDelay(component.node_hash, sig_type, *cycles_from_input);
     } else if (isSigDelay(sig, x, y)) {
-        generateDelay(component.node_hash, sig_type,  *cycles_from_input);
+        generateDelay(component.node_hash, sig_type, *cycles_from_input);
     } else if (isSigBinOp(sig, &i, x, y)) {
         generateBinaryOperator(component.node_hash, i, sig_type);
     //new operators
     } else if (isSigFloatCast(sig, x)) {
         generateFloatCast(component.node_hash, sig_type);
-    }
+    } else if (isSigIntCast(sig, x)) {
+        generateIntCast(component.node_hash, sig_type);
+    } 
 
     // TODO: implement missing operators, see the original SignalVisitor implementation
 
@@ -530,7 +561,7 @@ void VhdlCodeContainer::generateBinaryOperator(size_t hash, int kind, VhdlType t
         _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
         if (kind >= SOperator::kGT && kind <= SOperator::kXOR) {
             _entities.open_block();
-            _entities << "signal bool: boolean := data_in_1 "<< operator_symbol << " data_in_0;" << std::endl;
+            _entities << "signal bool: boolean := data_in_0 "<< operator_symbol << " data_in_1;" << std::endl;
             _entities.close_block();
             _entities << std::endl<< "begin"  << std::endl ;
             _entities.open_block();
@@ -587,6 +618,13 @@ void VhdlCodeContainer::generateBinaryOperator(size_t hash, int kind, VhdlType t
     std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
     _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
     _signal_identifier.insert({hash, signal_identifier});
+
+    //for each node we save their inputs' type to be able to convert at the mapping step
+    std::vector<VhdlType> vector;
+    vector.push_back(type);
+    vector.push_back(type);
+    port_type.insert({hash,vector});
+
 }
 
 void VhdlCodeContainer::generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input)
@@ -680,6 +718,11 @@ void VhdlCodeContainer::generateOneSampleDelay(size_t hash, VhdlType type, int c
     // currently computed sample, so that its value is '1' when the result to be saved is ready.
     auto registers_id = generateRegisterSeries(cycles_from_input, VhdlType(VhdlInnerType::StdLogic));
     _one_sample_delay_mappings.insert({hash, registers_id});
+
+    //for each node we save their inputs' type to be able to convert at the mapping step
+    std::vector<VhdlType> vector;
+    vector.push_back(type);
+    port_type.insert({hash,vector});
 }
 
 void VhdlCodeContainer::generateConstant(size_t hash, VhdlValue value)
@@ -766,6 +809,85 @@ void VhdlCodeContainer::generateFloatCast(size_t hash, VhdlType type)
     std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
     _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
     _signal_identifier.insert({hash, signal_identifier});
+
+    //for each node we save their inputs' type to be able to convert at the mapping step
+    std::vector<VhdlType> vector;
+    vector.push_back(VhdlInnerType::Integer);
+    port_type.insert({hash,vector});
+}
+
+void VhdlCodeContainer::generateIntCast(size_t hash, VhdlType type)
+{
+    std::string entity_name = entityName("CastInt", type);
+
+    int instance_identifier;
+
+    auto entry = _declared_entities.find(entity_name);
+    // If the generic entity is already declared, we do not redeclare it
+    if (entry == _declared_entities.end()) {
+        // TODO: right now, this is just a bypass entity made for basic programs to compile
+        _declared_entities.insert({entity_name, 0});
+	
+        _entities << "library ieee;" << std::endl;
+        _entities << "use ieee.std_logic_1164.all;" << std::endl;
+        _entities << "use ieee.numeric_std.all;" << std::endl;
+        _entities << "use ieee.std_logic_arith.all;" << std::endl;
+        _entities << "use ieee.std_logic_signed.all;" << std::endl;
+        _entities << "use work.fixed_float_types.all;" << std::endl;
+        // Include the right package for real numbers encoding
+        if (gGlobal->gVHDLFloatEncoding) {
+            _entities << "use work.float_pkg.all;" << std::endl;
+        } else {
+            _entities << "use work.fixed_pkg.all;" << std::endl;
+        }
+        
+        _entities << "entity " << entity_name << " is" << std::endl;
+        _entities.open_block();
+        _entities << "port (" << std::endl;
+        _entities.open_block();
+        _entities << "clock: in std_logic;" << std::endl;
+        _entities << "reset: in std_logic;" << std::endl;
+        _entities << "data_in_0: in sfixed (8 downto -23); " << std::endl;
+        _entities << "data_out: out " << type << std::endl;
+        _entities.close_block();
+        _entities << ");" << std::endl;
+        _entities.close_block();
+        _entities << "end entity " << entity_name << ";" << std::endl;
+
+        _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
+        _entities << "begin" << std::endl;
+        _entities.open_block();
+        _entities << "data_out <= to_integer(data_in_0);" << std::endl;
+        _entities.close_block();
+        _entities << "end architecture Behavioral;" << std::endl << std::endl;
+
+        _components << "component " << entity_name << " is" << std::endl;
+        _components.open_block();
+        _components << "port (" << std::endl;
+        _components.open_block();
+        _components << "clock: in std_logic;" << std::endl;
+        _components << "reset: in std_logic;" << std::endl;
+        _components << "data_in_0: in sfixed (8 downto -23);" << std::endl;
+        _components << "data_out: out " << type << std::endl;
+        _components.close_block();
+        _components << ");" << std::endl;
+        _components.close_block();
+        _components << "end component " << entity_name << ";" << std::endl << std::endl;
+
+        instance_identifier = 0;
+    } else {
+        entry->second += 1;
+        instance_identifier = entry->second;
+    }
+
+    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
+
+    //for each node we save their inputs' type to be able to convert at the mapping step
+    std::vector<VhdlType> vector;
+    vector.push_back(VhdlInnerType::SFixed);
+    port_type.insert({hash,vector});
 }
 
 size_t VhdlCodeContainer::generateRegisterSeries(int n, VhdlType type)
@@ -883,6 +1005,7 @@ size_t VhdlCodeContainer::generateRegisterSeries(int n, VhdlType type)
     _signals << "signal " << signal_name << " : " << type << " := " << VhdlValue(type) <<  ";" << std::endl;
     _register_series.push_back({ signal_name, std::nullopt, n, type });
     return _register_series.size() - 1;
+
 }
 
 void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type, int cycles_from_input)
@@ -923,7 +1046,7 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type, int cycles_fro
         _entities << "reset: in std_logic;" << std::endl;
         _entities << "clock_enable: in std_logic;" << std::endl;
         _entities << "data_in_0: in " << type << ";" << std::endl;
-        _entities << "data_in_1: in " << type << ";" << std::endl;
+        _entities << "data_in_1: in integer;" << std::endl;
         _entities << "data_out: out " << type << std::endl;
         _entities.close_block();
         _entities << ");" << std::endl;
@@ -991,6 +1114,91 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type, int cycles_fro
         _components << "reset: in std_logic;" << std::endl;
         _components << "clock_enable: in std_logic;" << std::endl;
         _components << "data_in_0: in " << type << ";" << std::endl;
+        _components << "data_in_1: in integer;" << std::endl;
+        _components << "data_out: out " << type << std::endl;
+        _components.close_block();
+        _components << ");" << std::endl;
+        _components.close_block();
+        _components << "end component " << entity_name << ";" << std::endl << std::endl;
+
+        instance_identifier = 0;
+    } else {
+        entry->second += 1;
+        instance_identifier = entry->second;
+    }
+
+    std::string signal_identifier = entity_name + "_" + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
+
+    if(cycles_from_input > 0){
+        // The write_enable port needs to be connected to a series of registers that runs parallel to the
+        // currently computed sample, so that its value is '1' when the result to be saved is ready.
+        auto registers_id = generateRegisterSeries(cycles_from_input, VhdlType(VhdlInnerType::StdLogic));
+        _delays_mappings.insert({hash, registers_id});
+    }
+
+    //for each node we save their inputs' type to be able to convert at the mapping step
+    std::vector<VhdlType> vector;
+    vector.push_back(type);
+    vector.push_back(VhdlInnerType::Integer);
+    port_type.insert({hash,vector});
+    
+}
+
+void VhdlCodeContainer::generateBypass(size_t hash, VhdlType type)
+{
+    std::string entity_name = entityName("Bypass", type);
+
+    int instance_identifier;
+
+    auto entry = _declared_entities.find(entity_name);
+    // If the generic entity is already declared, we do not redeclare it
+    if (entry == _declared_entities.end()) {
+        // TODO: right now, this is just a bypass entity made for basic programs to compile
+        _declared_entities.insert({entity_name, 0});
+
+        _entities << "library ieee;" << std::endl;
+        _entities << "use ieee.std_logic_1164.all;" << std::endl;
+        _entities << "use ieee.numeric_std.all;" << std::endl;
+        _entities << "use ieee.std_logic_arith.all;" << std::endl;
+        _entities << "use ieee.std_logic_signed.all;" << std::endl;
+        _entities << "use work.fixed_float_types.all;" << std::endl;
+        // Include the right package for real numbers encoding
+        if (gGlobal->gVHDLFloatEncoding) {
+            _entities << "use work.float_pkg.all;" << std::endl;
+        } else {
+            _entities << "use work.fixed_pkg.all;" << std::endl;
+        }
+
+        _entities << "entity " << entity_name << " is" << std::endl;
+        _entities.open_block();
+        _entities << "port (" << std::endl;
+        _entities.open_block();
+        _entities << "clock: in std_logic;" << std::endl;
+        _entities << "reset: in std_logic;" << std::endl;
+        _entities << "data_in_0: in " << type << ";" << std::endl;
+        _entities << "data_in_1: in " << type << ";" << std::endl;
+        _entities << "data_out: out " << type << std::endl;
+        _entities.close_block();
+        _entities << ");" << std::endl;
+        _entities.close_block();
+        _entities << "end entity " << entity_name << ";" << std::endl;
+
+        _entities << "architecture Behavioral of " << entity_name << " is" << std::endl;
+        _entities << "begin" << std::endl;
+        _entities.open_block();
+        _entities << "data_out <= data_in_0;" << std::endl;
+        _entities.close_block();
+        _entities << "end architecture Behavioral;" << std::endl << std::endl;
+
+        _components << "component " << entity_name << " is" << std::endl;
+        _components.open_block();
+        _components << "port (" << std::endl;
+        _components.open_block();
+        _components << "clock: in std_logic;" << std::endl;
+        _components << "reset: in std_logic;" << std::endl;
+        _components << "data_in_0: in " << type << ";" << std::endl;
         _components << "data_in_1: in " << type << ";" << std::endl;
         _components << "data_out: out " << type << std::endl;
         _components.close_block();
@@ -1008,8 +1216,9 @@ void VhdlCodeContainer::generateDelay(size_t hash, VhdlType type, int cycles_fro
     _signals << "signal " << signal_identifier << " : " << type << " := " << VhdlValue(type) << ";" << std::endl;
     _signal_identifier.insert({hash, signal_identifier});
 
-    // The write_enable port needs to be connected to a series of registers that runs parallel to the
-    // currently computed sample, so that its value is '1' when the result to be saved is ready.
-    auto registers_id = generateRegisterSeries(cycles_from_input, VhdlType(VhdlInnerType::StdLogic));
-    _delays_mappings.insert({hash, registers_id});
+    //for each node we save their inputs' type to be able to convert at the mapping step
+    std::vector<VhdlType> vector;
+    vector.push_back(type);
+    vector.push_back(type);
+    port_type.insert({hash,vector});
 }

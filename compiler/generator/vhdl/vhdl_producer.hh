@@ -24,6 +24,12 @@ This program is distributed in the hope that it will be useful,
 #include "signalVisitor.hh"
 #include "global.hh"
 #include "sigtyperules.hh"
+
+#include "occurrences.hh"
+#include "recursivness.hh"
+#include "normalform.hh"
+#include "occurrences.hh"
+
 #include <fstream>
 #include <optional>
 #include <iostream>
@@ -135,7 +141,9 @@ class VhdlProducer : public SignalVisitor {
     std::vector<Vertex> _vertices;
     std::vector<std::vector<Edge>> _edges;
 
-    std::map <size_t, size_t> delays;
+    std::map <size_t, int > delays;
+    std::map <size_t, int > max_delays;
+
 
     // Used to create the graph from a signal tree
     std::stack<VisitInfo> _visit_stack;
@@ -152,7 +160,7 @@ class VhdlProducer : public SignalVisitor {
 
    public:
     VhdlProducer(Tree signal, const std::string& name, int numInputs, int numOutputs)
-    : _signal(signal), _name(name), _inputs_count(numInputs), _outputs_count(numOutputs)
+    : _signal(signal), _name(name), _inputs_count(numInputs), _outputs_count(numOutputs), fOccMarkup(nullptr)
     {
     }
 
@@ -180,6 +188,14 @@ class VhdlProducer : public SignalVisitor {
     
 
     void initializeFromSignal() {
+        // Mark tree
+        Tree L1 = _signal;
+        recursivnessAnnotation(L1);
+        typeAnnotation(L1, true);
+        if (fOccMarkup!= nullptr) delete fOccMarkup;
+        fOccMarkup = new OccMarkup();
+        fOccMarkup->mark(L1); 
+
         // Convert the input signal to a weighted circuit graph
         visitRoot(_signal);
 
@@ -199,6 +215,11 @@ class VhdlProducer : public SignalVisitor {
     }
 
    protected:
+
+    //Contains occurence of all signals
+    OccMarkup*  fOccMarkup;
+    
+
     /**
      * CODE GENERATION
      */
@@ -292,22 +313,41 @@ class VhdlProducer : public SignalVisitor {
     virtual void self(Tree t) override
     {   
         int     i;
-        Tree    x, y;
+        Tree    x, y, l, cur, min, max, step;
         
+        //sliders are considered as constant corresponding to their default value "cur"
+        if(isSigHSlider(t, l, cur, min, max, step)){
+            t = cur;
+        }
+        
+        //Delays with value bigger than 0 are registered
+        if(!_visit_stack.empty()){
+            VisitInfo last_visited   = _visit_stack.top();
+            int vertex_id = _visit_stack.top().vertex_index;
+            auto delay_hash = _vertices[vertex_id].node_hash;
+            if(last_visited.is_delay){
+                if(delays.find(delay_hash) == delays.end()){
+                    Occurrences* o = fOccMarkup->retrieve(t);
+                    int delay_value = o->getMaxDelay();
+                    if (delay_value > 0){
+                        max_delays.insert({delay_hash,delay_value});
+                    }
+                }   
+            }
+        }
+
         if (fTrace) traceEnter(t);
         fIndent++;
         
         if (!fVisited.count(t)) {
-                fVisited[t] = 0;
-                visit(t); 
+            fVisited[t] = 0;
+            visit(t); 
         }else if(isProj(t, &i, x)){
-            
-            int vertex_id = _vertices.size();
             auto existing_id = searchNode(t->hashkey());
             // If the signal was already seen before and our subtree goes to a recursive output,
             // we add the corresponding recursive input to this node.
             if (existing_id.has_value() && !_virtual_io_stack.empty()) {
-                vertex_id = _visit_stack.top().vertex_index;
+                int vertex_id = _visit_stack.top().vertex_index;
                 int virtual_input_id = _virtual_io_stack.top();
                 _edges[virtual_input_id].push_back(Edge(vertex_id, 0, 0));
             }
@@ -333,6 +373,41 @@ class VhdlProducer : public SignalVisitor {
 
         
     }
-  
+
+    //à effacer
+    void displayNode(Tree sig){
+    int     i;
+    int64_t i64;
+    double  r;
+    Tree    size, gen, wi, ws, tbl, ri, c, sel, x, y, z, u, v, var, le, label, ff, largs, type, name, file, sf;
+    
+        if (isSigInt(sig, &i)) {
+            std::cout << "Int" << std::endl;
+        } else if (isSigInt64(sig, &i64)) {
+            std::cout << "Int64" << std::endl;
+        } else if (isSigReal(sig, &r)) {
+            std::cout << "Real" << std::endl;
+        } else if (isSigWaveform(sig)) {
+            std::cout << "waveform" << std::endl;
+        } else if (isSigInput(sig, &i)) {
+            std::cout << "Input" << std::endl;
+        } else if (isSigOutput(sig, &i, x)) {
+            std::cout << "output" << std::endl;
+        } else if (isSigDelay1(sig, x)) {
+            std::cout << "Delay1" << std::endl;
+        } else if (isSigDelay(sig, x, y)) {
+            std::cout << "Delay" << std::endl;
+        } else if (isSigPrefix(sig, x, y)) {
+            std::cout << "Prefix" << std::endl;
+        } else if (isSigBinOp(sig, &i, x, y)) {
+            std::cout << "BinOp" << std::endl;
+        } else if (isProj(sig, &i, x)) {
+            std::cout << "Proj" << std::endl;
+        } else if (isRec(sig, var, le)) {
+            std::cout << "Rec" << std::endl;
+        }else{
+            std::cout << "node not registered" << std::endl;
+        }
+    }
     
 };
