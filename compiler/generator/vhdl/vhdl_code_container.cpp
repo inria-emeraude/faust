@@ -36,6 +36,7 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeBlock& block) {
 }
 
 std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) {
+
     
     out << std::endl << "-- ======= ENTITIES =========" << std::endl;
     out << container._entities << std::endl;
@@ -477,9 +478,25 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
     } else if (isSigOutput(sig, &i, x)) {
        // Normal outputs do not generate anything 
     } else if (isSigDelay1(sig, x)) {
-        generateDelay(component.node_hash, sig_type, *cycles_from_input);
+        if(_delays.find(component.node_hash) != _delays.end()){
+            if(_delays.at(component.node_hash) != 0){
+               generateDelay(component.node_hash, sig_type, *cycles_from_input); 
+            }else{
+                generateBypass(component.node_hash, sig_type);
+            }
+        }else{
+            generateBypass(component.node_hash, sig_type);
+        } 
     } else if (isSigDelay(sig, x, y)) {
-        generateDelay(component.node_hash, sig_type, *cycles_from_input);
+        if(_delays.find(component.node_hash) != _delays.end()){
+            if(_delays.at(component.node_hash) != 0){
+               generateDelay(component.node_hash, sig_type, *cycles_from_input); 
+            }else{
+                generateBypass(component.node_hash, sig_type);
+            }
+        }else{
+            generateBypass(component.node_hash, sig_type);
+        } 
     } else if (isSigBinOp(sig, &i, x, y)) {
         generateBinaryOperator(component.node_hash, i, sig_type);
     //new operators
@@ -487,7 +504,9 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
         generateFloatCast(component.node_hash, sig_type);
     } else if (isSigIntCast(sig, x)) {
         generateIntCast(component.node_hash, sig_type);
-    } 
+    } else if (isRec(sig, x, y)) {
+        generateBypass(component.node_hash, sig_type);
+    }
 
     // TODO: implement missing operators, see the original SignalVisitor implementation
 

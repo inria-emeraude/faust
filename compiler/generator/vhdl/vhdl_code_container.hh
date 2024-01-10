@@ -225,6 +225,7 @@ class VhdlCodeContainer
     // Mappings specific to outputs and/or recursive storage
     std::vector < std::vector <std::variant < size_t, VhdlType >>> _output_mappings;
     std::map <size_t, size_t> _one_sample_delay_mappings;
+    
     std::map <size_t, size_t> _delays;
     std::map <size_t, size_t> _delays_mappings;
     std::map <size_t, std::vector<VhdlType>> port_type;
@@ -261,14 +262,16 @@ class VhdlCodeContainer
      * COMPONENT GENERATORS
      */
     size_t generateRegisterSeries(int n, VhdlType type);
+    
+    void generateConstant(size_t hash, VhdlValue value);
+    void generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input);
+    void generateBinaryOperator(size_t hash, int kind, VhdlType type);
+
     void generateDelay(size_t hash, VhdlType type, int cycles_from_input);
     void generateBypass(size_t hash, VhdlType type);
     void generateFloatCast(size_t hash, VhdlType type);
     void generateIntCast(size_t hash, VhdlType type);
-    void generateConstant(size_t hash, VhdlValue value);
-    void generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input);
-    void generateBinaryOperator(size_t hash, int kind, VhdlType type);
-    
+
     void convertIn(VhdlType type, int i);
     void convertOut();
 

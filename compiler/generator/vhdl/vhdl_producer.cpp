@@ -291,7 +291,7 @@ std::vector<int> VhdlProducer::maxIncomingPropagationDelays() {
       if (propagation_delay[vertex_id] != 0) {
           return propagation_delay[vertex_id];
       }
-
+      
       std::vector<int> incoming_edges = incomingEdges(vertex_id, zero_edges);
       int max_incoming = 0;
       for (auto incoming_vertex : incoming_edges) {
@@ -300,7 +300,6 @@ std::vector<int> VhdlProducer::maxIncomingPropagationDelays() {
               max_incoming = delay;
           }
       }
-
       propagation_delay[vertex_id] = _vertices[vertex_id].propagation_delay + max_incoming;
       return propagation_delay[vertex_id];
     };

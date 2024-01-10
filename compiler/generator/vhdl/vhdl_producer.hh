@@ -56,7 +56,8 @@ struct Vertex {
     bool recursive;
 
     Vertex(const Tree& signal)
-        : signal(signal), node_hash(signal->hashkey()), nature(getCertifiedSigType(signal)->nature()), propagation_delay(1), pipeline_stages(0), recursive(false) {};
+        : signal(signal), node_hash(signal->hashkey()), nature(getCertifiedSigType(signal)->nature()),
+         propagation_delay(1), pipeline_stages(0), recursive(false) {};
 
     // Creates an output/input node from another signal
     // This node can be a recursive output if it is linked to a Proj signal
@@ -106,7 +107,8 @@ struct Edge {
     int critical_path_weight;
     int critical_path_delay;
 
-    Edge(int target_id, int register_count, int origin_delay): target(target_id), register_count(register_count), critical_path_weight(register_count), critical_path_delay(-origin_delay) {}
+    Edge(int target_id, int register_count, int origin_delay): target(target_id), register_count(register_count), 
+    critical_path_weight(register_count), critical_path_delay(-origin_delay) {}
 };
 
 /**
@@ -340,8 +342,9 @@ class VhdlProducer : public SignalVisitor {
         fIndent++;
         
         if (!fVisited.count(t)) {
-            fVisited[t] = 0;
+            fVisited[t] = 1;
             visit(t); 
+
         }else if(isProj(t, &i, x)){
             auto existing_id = searchNode(t->hashkey());
             // If the signal was already seen before and our subtree goes to a recursive output,
