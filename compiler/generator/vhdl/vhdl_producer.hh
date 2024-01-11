@@ -144,6 +144,7 @@ class VhdlProducer : public SignalVisitor {
     std::vector<std::vector<Edge>> _edges;
 
     std::map <size_t, int > delays;
+    std::vector <size_t> bypass;
     std::map <size_t, int > max_delays;
 
 
@@ -355,6 +356,7 @@ class VhdlProducer : public SignalVisitor {
                 _edges[virtual_input_id].push_back(Edge(vertex_id, 0, 0));
             }
         }else{
+            //if the node is already visited, we only establish an edge
             size_t hash = t->hashkey();
             auto existing_id = searchNode(hash);
             if(existing_id.has_value() && !_visit_stack.empty()){
