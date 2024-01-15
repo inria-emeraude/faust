@@ -264,6 +264,7 @@ class VhdlCodeContainer
     size_t generateRegisterSeries(int n, VhdlType type);
     
     void generateConstant(size_t hash, VhdlValue value);
+    void generateFConstant(size_t);
     void generateOneSampleDelay(size_t hash, VhdlType type, int cycles_from_input);
     void generateBinaryOperator(size_t hash, int kind, VhdlType type);
 

@@ -52,14 +52,14 @@ void VhdlProducer::visit(Tree signal)
         // Initialize a new vertex
         if(isSigDelay(signal, x, y)){
             _visit_stack.push(VisitInfo::make_delay(vertex_id));
-            VisitInfo last_visited   = _visit_stack.top();
-            if(last_visited.is_recursive){
-                bypass.push_back(_vertices[vertex_id].node_hash);
+            for (Tree b : signal ->branches()) {
+                if (isProj(b, &i, x)){
+                    bypass.push_back(signal->hashkey());
+                }
             }
         }else{
             _visit_stack.push(VisitInfo(vertex_id));
         }
-        
         addVertex(Vertex(signal));
         // Then visit its children.
         SignalVisitor::visit(signal);
@@ -162,11 +162,12 @@ void VhdlProducer::generic_mappings(VhdlCodeContainer& container)
             delays.insert({delay_hash, max_delay});
         }
     }
-
     for (auto element : delays){
         auto delay_hash = element.first;
         auto delay_value = element.second;
-        if (bypass.begin(), bypass.end(), delay_hash){
+        auto it = std::find(bypass.begin(), bypass.end(), delay_hash) != bypass.end();
+        std::cout << it << std::endl;
+        if (it){
             if (delay_value > 0){
                 delay_value = delay_value-1;
             } 

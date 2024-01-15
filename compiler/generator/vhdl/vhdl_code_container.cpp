@@ -438,7 +438,7 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
     int      i;
     int64_t  i64;
     double   r;
-    Tree     x, y, l, cur, min, max, step;
+    Tree     x, y, l, cur, min, max, step, type, file, name;
 
     xtended* user_data = (xtended*)getUserData(sig);
     VhdlType sig_type;
@@ -506,8 +506,10 @@ void VhdlCodeContainer::register_component(const Vertex& component, std::optiona
         generateIntCast(component.node_hash, sig_type);
     } else if (isRec(sig, x, y)) {
         generateBypass(component.node_hash, sig_type);
+    } else if (isSigFConst(sig, type, name, file)) {
+        generateFConstant(component.node_hash);
+        return;
     }
-
     // TODO: implement missing operators, see the original SignalVisitor implementation
 
     else if (isNil(sig)) {
@@ -580,10 +582,11 @@ void VhdlCodeContainer::generateBinaryOperator(size_t hash, int kind, VhdlType t
         _entities << std::endl << "architecture Behavioral of " << entity_name << " is" << std::endl;
         if (kind >= SOperator::kGT && kind <= SOperator::kXOR) {
             _entities.open_block();
-            _entities << "signal bool: boolean := data_in_0 "<< operator_symbol << " data_in_1;" << std::endl;
+            _entities << "signal bool: boolean;" << std::endl;
             _entities.close_block();
             _entities << std::endl<< "begin"  << std::endl ;
             _entities.open_block();
+            _entities << " bool <= data_in_0 "<< operator_symbol << " data_in_1;" << std::endl;
             _entities << "data_out <= 1 when bool = true else "  << std::endl;
             _entities << "0; " << std::endl;
             _entities.close_block();
@@ -758,6 +761,23 @@ void VhdlCodeContainer::generateConstant(size_t hash, VhdlValue value)
     }
     std::string signal_identifier = std::string("constant_") + std::to_string(instance_identifier);
     _signals << "signal " << signal_identifier << " : " << value.vhdl_type << " := " << value << ";" << std::endl;
+    _signal_identifier.insert({hash, signal_identifier});
+}
+
+void VhdlCodeContainer::generateFConstant(size_t hash)
+{
+    int instance_identifier;
+    auto entry = _declared_entities.find("FConstant");
+    if (entry == _declared_entities.end())
+    {
+        _declared_entities.insert({"FConstant", 0});
+        instance_identifier = 0;
+    } else {
+        entry->second += 1;
+        instance_identifier = entry->second;
+    }
+    std::string signal_identifier = std::string("constant_") + std::to_string(instance_identifier);
+    _signals << "signal " << signal_identifier << " : integer := 48000 ;" << std::endl;
     _signal_identifier.insert({hash, signal_identifier});
 }
 
