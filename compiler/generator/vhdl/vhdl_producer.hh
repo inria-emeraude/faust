@@ -143,10 +143,10 @@ class VhdlProducer : public SignalVisitor {
     std::vector<Vertex> _vertices;
     std::vector<std::vector<Edge>> _edges;
 
-    std::map <size_t, int > delays;
+    std::map <size_t, int> delays;
     std::vector <size_t> bypass;
-    std::map <size_t, int > max_delays;
-
+    std::map <size_t, int> max_delays;
+    std::map <size_t, std::vector <size_t>> delays_source;
 
     // Used to create the graph from a signal tree
     std::stack<VisitInfo> _visit_stack;
@@ -280,7 +280,7 @@ class VhdlProducer : public SignalVisitor {
 
     std::vector<int> incomingEdges(int vertex_id, const std::vector<std::vector<Edge>>& edges) const {
         std::vector<int> incoming;
-        for (size_t v = 0; v < edges.size(); ++v) {
+        for (int v = 0; v < edges.size(); ++v) {
             for (auto edge : edges[v]) {
                 if (edge.target == vertex_id) {
                     incoming.push_back(v);
@@ -345,16 +345,19 @@ class VhdlProducer : public SignalVisitor {
         if (!fVisited.count(t)) {
             fVisited[t] = 1;
             visit(t); 
-
+        
         }else if(isProj(t, &i, x)){
+            std::cout << "ok" << std::endl;
             auto existing_id = searchNode(t->hashkey());
             // If the signal was already seen before and our subtree goes to a recursive output,
             // we add the corresponding recursive input to this node.
-            if (existing_id.has_value() && !_virtual_io_stack.empty()) {
+            if (existing_id.has_value()&& !_virtual_io_stack.empty()) {
+                std::cout << "ok2" << std::endl;
                 int vertex_id = _visit_stack.top().vertex_index;
                 int virtual_input_id = _virtual_io_stack.top();
                 _edges[virtual_input_id].push_back(Edge(vertex_id, 0, 0));
             }
+        
         }else{
             //if the node is already visited, we only establish an edge
             size_t hash = t->hashkey();
@@ -376,7 +379,6 @@ class VhdlProducer : public SignalVisitor {
         fIndent--;
         if (fTrace) traceExit(t);
 
-        
     }
 
     //à effacer
@@ -410,6 +412,8 @@ class VhdlProducer : public SignalVisitor {
             std::cout << "Proj" << std::endl;
         } else if (isRec(sig, var, le)) {
             std::cout << "Rec" << std::endl;
+        } else if (isSigFloatCast(sig, x)) {
+            std::cout << "float Cast" << std::endl;
         }else{
             std::cout << "node not registered" << std::endl;
         }

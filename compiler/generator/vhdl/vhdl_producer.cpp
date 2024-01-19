@@ -40,7 +40,7 @@ void VhdlProducer::visit(Tree signal)
         // Then visiting the projected value.
         self(x);
 
-        _virtual_io_stack.pop();
+        //_virtual_io_stack.pop();
         _visit_stack.pop();
     }
     // Recursive symbols are bypassed in the final graph.
@@ -52,7 +52,7 @@ void VhdlProducer::visit(Tree signal)
         // Initialize a new vertex
         if(isSigDelay(signal, x, y)){
             _visit_stack.push(VisitInfo::make_delay(vertex_id));
-            for (Tree b : signal ->branches()) {
+            for (Tree b : signal -> branches()) {
                 if (isProj(b, &i, x)){
                     bypass.push_back(signal->hashkey());
                 }
@@ -96,6 +96,7 @@ void VhdlProducer::visit(Tree signal)
                                              _vertices[vertex_id].propagation_delay));
         }
     }
+
     
 }
 
@@ -166,7 +167,6 @@ void VhdlProducer::generic_mappings(VhdlCodeContainer& container)
         auto delay_hash = element.first;
         auto delay_value = element.second;
         auto it = std::find(bypass.begin(), bypass.end(), delay_hash) != bypass.end();
-        std::cout << it << std::endl;
         if (it){
             if (delay_value > 0){
                 delay_value = delay_value-1;
@@ -302,7 +302,6 @@ std::vector<int> VhdlProducer::maxIncomingPropagationDelays() {
       if (propagation_delay[vertex_id] != 0) {
           return propagation_delay[vertex_id];
       }
-      
       std::vector<int> incoming_edges = incomingEdges(vertex_id, zero_edges);
       int max_incoming = 0;
       for (auto incoming_vertex : incoming_edges) {
