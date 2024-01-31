@@ -118,7 +118,6 @@ struct VhdlPort {
 std::ostream& operator<<(std::ostream& out, const VhdlPort& port);
 
 std::string entityTypeFromName(const std::string& name);
-VhdlType TypeFromName(const std::string& name);
 
 /** Handles indentation automatically, to avoid repeating '\t' everywhere which is error prone */
 class VhdlCodeBlock : public std::ostream, public std::enable_shared_from_this<VhdlCodeBlock>
@@ -226,8 +225,11 @@ class VhdlCodeContainer
     std::vector < std::vector <std::variant < size_t, VhdlType >>> _output_mappings;
     std::map <size_t, size_t> _one_sample_delay_mappings;
     
+    // Delays' hash linked to their delay value
     std::map <size_t, size_t> _delays;
+    // Mappings specific to connect the port clock_enable of the delays
     std::map <size_t, size_t> _delays_mappings;
+    // Mappings containing, for each node, its sources' ports type
     std::map <size_t, std::vector<VhdlType>> port_type;
 
     // Stores code for custom operators

@@ -52,6 +52,7 @@ void VhdlProducer::visit(Tree signal)
         // Initialize a new vertex
         if(isSigDelay(signal, x, y)){
             _visit_stack.push(VisitInfo::make_delay(vertex_id));
+            // If the last visited node is a "Proj", we will bypass the delay to correct the dupliclated delay of 1 after a recursion
             for (Tree b : signal -> branches()) {
                 if (isProj(b, &i, x)){
                     bypass.push_back(signal->hashkey());
@@ -73,7 +74,7 @@ void VhdlProducer::visit(Tree signal)
             _edges[vertex_id].push_back(
                 Edge(last_visited.vertex_index, register_count, _vertices[vertex_id].propagation_delay));
 
-            //we register all delays of constant value
+            // We register all delays of constant value
             if (last_visited.is_delay){
                 if(isSigInt(signal, &i)){
                     int last_visited_id= last_visited.vertex_index;
@@ -156,6 +157,7 @@ void VhdlProducer::map_ports(VhdlCodeContainer& container)
 
 void VhdlProducer::generic_mappings(VhdlCodeContainer& container)
 {
+    // We add to delays the nodes that don't have a constant delay value but the result of a whole subtree
     for (auto element : max_delays){
         auto delay_hash = element.first;
         auto max_delay = element.second;
@@ -163,9 +165,12 @@ void VhdlProducer::generic_mappings(VhdlCodeContainer& container)
             delays.insert({delay_hash, max_delay});
         }
     }
+
+    // We transfer the delays value to VhdlCodeContainer
     for (auto element : delays){
         auto delay_hash = element.first;
         auto delay_value = element.second;
+        // We remove the additional delay of 1 in the case of a recursion
         auto it = std::find(bypass.begin(), bypass.end(), delay_hash) != bypass.end();
         if (it){
             if (delay_value > 0){

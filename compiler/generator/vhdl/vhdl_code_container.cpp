@@ -80,11 +80,13 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
     out << std::endl << "-- ======= SIGNALS ==========" << std::endl;
     out << container._signals << std::endl;
 
+    //  Declare signals register_n
     for (size_t register_id = 0; register_id < container._register_series.size(); ++register_id) {
         auto register_series = container._register_series[register_id];
         out << "signal registers_" << register_id << " : " << register_series.type << ";" << std::endl;  
     }
 
+    // Declare signals converted_register_n to connect components with different port types
     for (auto mapping : container._mappings) {
         if (mapping.second.empty()) {
             continue;
@@ -131,21 +133,25 @@ std::ostream& operator<<(std::ostream& out, const VhdlCodeContainer& container) 
 
         auto target_id = container._signal_identifier.at(target_hash);
         out << "pm_" << target_id << " : " << entityTypeFromName(target_id) << std::endl;
+        
+        // For delays, we map n to the constant value
         if (!(container._delays.find(target_hash)==container._delays.end())){
             if (container._delays.at(target_hash) != 0){
                 out << '\t' << "generic map (n => " << container._delays.at(target_hash) << ")" << std::endl;
             }  
         }
+
         out << '\t' << "port map (" << std::endl;
         out << "\t\t" << "clock => ap_clk," << std::endl;
         out << "\t\t" << "reset => ap_rst_n," << std::endl;
 
-        // Check if the component is a one sample delay
+        // Check if the component is a one sample delay and connect its port "write_enable"
         auto write_enable_sig = container._one_sample_delay_mappings.find(target_hash);
         if (write_enable_sig != container._one_sample_delay_mappings.end()) {
             out << "\t\t" << "write_enable => registers_" << write_enable_sig->second << "," << std::endl;
         }
 
+        // Check if the componenent is a delay and connect its port "clock_enable"
         if (!(container._delays_mappings.find(target_hash)==container._delays_mappings.end())){
             out << "\t\t" << "clock_enable => registers_" << container._delays_mappings.at(target_hash) << "," << std::endl;
         }
@@ -243,6 +249,7 @@ void VhdlCodeContainer::connect(const Vertex& source, const Vertex& target, int 
     }
 }
 
+// Generate input mappings with the right conversion
 void VhdlCodeContainer::convertIn(VhdlType type, int i){
     if(type.type == VhdlInnerType::SFixed){
         _signals << std::endl << "signal data_in_" << i <<" : sfixed (0 downto -23);" << std::endl;
@@ -280,13 +287,18 @@ void VhdlCodeContainer::convertOut(){
 }
 
 
-//
-//*some useful fonctions*/
-//
+
 
 void VhdlCodeContainer::fill_delays(size_t delay_hash,int constant){
     _delays.insert({delay_hash,constant});
 }
+
+
+//
+//*some useful fonctions*/
+//
+
+
 
 std::string entityTypeFromName(const std::string& name) {
     std::string entity_type;
@@ -296,18 +308,6 @@ std::string entityTypeFromName(const std::string& name) {
     }
     return entity_type;
 }
-
-VhdlType TypeFromName(const std::string& name) {
-    if (name.find("SFixed8_m23") != std::string::npos) {
-        return VhdlType(VhdlInnerType::SFixed, 8, -23);
-    }else if (name.find("Integer") != std::string::npos){
-        return VhdlType(VhdlInnerType::Integer);
-    }
-
-    return VhdlType(VhdlInnerType::Any);
-}
-
-
 
 std::string VhdlType::to_string() const
 {

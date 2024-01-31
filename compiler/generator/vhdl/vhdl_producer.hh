@@ -101,7 +101,7 @@ struct std::hash<Vertex> {
  * It also keeps intermediate results in memory, such as the highest critical path weight/delay
  */
 struct Edge {
-    int target;
+    int target;                                //position of the target node in _vertices
     int register_count;
 
     int critical_path_weight;
@@ -140,13 +140,13 @@ struct VisitInfo {
 //----------------------------------------------------------------------
 class VhdlProducer : public SignalVisitor {
     // Graph
-    std::vector<Vertex> _vertices;
-    std::vector<std::vector<Edge>> _edges;
+    std::vector<Vertex> _vertices;          // Contains all the visited nodes
+    std::vector<std::vector<Edge>> _edges;  // Contains the target of the node at the same position of the node in _vertices
 
-    std::map <size_t, int> delays;
-    std::vector <size_t> bypass;
-    std::map <size_t, int> max_delays;
-    std::map <size_t, std::vector <size_t>> delays_source;
+    // Used to stock delays' information
+    std::map <size_t, int> delays;          // Maps the delay's hash to the delay value
+    std::vector <size_t> bypass;            // Contains the delays' nodes with a nill delay value 
+    std::map <size_t, int> max_delays;      // Contains the delays' nodes with the max delay value taking into account the whole subtree arriving to the delay node
 
     // Used to create the graph from a signal tree
     std::stack<VisitInfo> _visit_stack;
@@ -189,9 +189,9 @@ class VhdlProducer : public SignalVisitor {
     void retiming();
 
     
-
+    // Starts the Faust tree visit
     void initializeFromSignal() {
-        // Mark tree
+        // Marking the tree in order to retreive the max delays 
         Tree L1 = _signal;
         recursivnessAnnotation(L1);
         typeAnnotation(L1, true);
@@ -219,15 +219,18 @@ class VhdlProducer : public SignalVisitor {
 
    protected:
 
-    //Contains occurence of all signals
+    // Contains occurence of all signals
     OccMarkup*  fOccMarkup;
     
 
     /**
      * CODE GENERATION
      */
-    void instantiate_components(VhdlCodeContainer& container);
-    void map_ports(VhdlCodeContainer& container);
+    // For each Vertex of _vertices we generate the right VHDL code depending on the node's type
+    void instantiate_components(VhdlCodeContainer& container); 
+    // Fills a variable of VhdlCodeContainer with, for each node of the Tree, the  sources nodes including registers with the right register count
+    void map_ports(VhdlCodeContainer& container); 
+    // Fills a variable of VhdlCodeContainer with the delays' hash and their delay value
     void generic_mappings(VhdlCodeContainer& container);
 
     /**
@@ -318,12 +321,12 @@ class VhdlProducer : public SignalVisitor {
         int     i;
         Tree    x, y, l, cur, min, max, step;
         
-        //sliders are considered as constant corresponding to their default value "cur"
+        // Sliders are considered as constant corresponding to their default value "cur"
         if(isSigHSlider(t, l, cur, min, max, step)){
             t = cur;
         }
         
-        //Delays with value bigger than 0 are registered
+        // Delays with value bigger than 0 are registered
         if(!_visit_stack.empty()){
             VisitInfo last_visited   = _visit_stack.top();
             int vertex_id = _visit_stack.top().vertex_index;
@@ -347,12 +350,10 @@ class VhdlProducer : public SignalVisitor {
             visit(t); 
         
         }else if(isProj(t, &i, x)){
-            std::cout << "ok" << std::endl;
             auto existing_id = searchNode(t->hashkey());
             // If the signal was already seen before and our subtree goes to a recursive output,
             // we add the corresponding recursive input to this node.
             if (existing_id.has_value()&& !_virtual_io_stack.empty()) {
-                std::cout << "ok2" << std::endl;
                 int vertex_id = _visit_stack.top().vertex_index;
                 int virtual_input_id = _virtual_io_stack.top();
                 _edges[virtual_input_id].push_back(Edge(vertex_id, 0, 0));
@@ -366,6 +367,7 @@ class VhdlProducer : public SignalVisitor {
                 int vertex_id = _visit_stack.top().vertex_index;
                 _edges[existing_id.value()].push_back(Edge(vertex_id, 0, 0));
                 VisitInfo last_visited   = _visit_stack.top();
+                // If the last visited node is a delay and the current one is a constant, then we register the node
                 if (last_visited.is_delay){
                     if(isSigInt(t, &i)){
                         delays.insert({_vertices[vertex_id].node_hash,hash});
@@ -381,7 +383,7 @@ class VhdlProducer : public SignalVisitor {
 
     }
 
-    //à effacer
+    // Fonction to display the node type corresponding to a signal
     void displayNode(Tree sig){
     int     i;
     int64_t i64;
