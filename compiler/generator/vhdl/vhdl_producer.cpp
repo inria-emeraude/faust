@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include <string>
+#include "vhdl_producer.hh"
+#include "xtended.hh"
 
 int Vertex::input_counter = 0;
 int Vertex::output_counter = 0;
@@ -371,13 +374,146 @@ void VhdlProducer::applyRetiming(const Retiming& retiming)
     }
 }
 
+static const char* binopname[] = {"+", "-", "*", "/", "%", "<<", ">>", ">", "<", ">=", "<=", "==", "!=", "&", "|", "^"};
+
+/* return the label of a signal as a string
+ strings*/
+std::string VhdlProducer::sigLabel(const Tree sig) const
+{
+    int    i;
+    double r;
+    Tree   size, gen, wi, ws, tbl, ri, x, y, z, c, type, name, file, ff, largs, le, sel, var, label;
+
+    xtended* p = (xtended*)getUserData(sig);
+
+    std::stringstream fout;
+
+    if (p) {
+        fout << p->name();
+    } else if (isSigInt(sig, &i)) {
+        fout << i;
+    } else if (isSigReal(sig, &r)) {
+        fout << r;
+    } else if (isSigWaveform(sig)) {
+        fout << "waveform";
+    }
+
+    else if (isSigInput(sig, &i)) {
+        fout << "INPUT_" << i;
+    }
+    else if ( isSigOutput(sig, &i, x) )        
+         { fout << "OUTPUT_" << i; }
+
+    else if (isSigDelay1(sig, x)) {
+        fout << "mem";
+    } else if (isSigDelay(sig, x, y)) {
+        fout << "@";
+    } else if (isSigPrefix(sig, x, y)) {
+        fout << "prefix";
+    } else if (isSigBinOp(sig, &i, x, y)) {
+        fout << binopname[i];
+    } else if (isSigFFun(sig, ff, largs)) {
+        fout << "ffunction:" << *ff;
+    } else if (isSigFConst(sig, type, name, file)) {
+        fout << *name;
+    } else if (isSigFVar(sig, type, name, file)) {
+        fout << *name;
+    }
+
+    else if (isSigWRTbl(sig, size, gen, wi, ws)) {
+        fout << "write:" << sig;
+    } else if (isSigRDTbl(sig, tbl, ri)) {
+        fout << "read";
+    }
+
+    else if (isSigSelect2(sig, sel, x, y)) {
+        fout << "select2";
+    }
+
+    else if (isSigGen(sig, x)) {
+        fout << "generator";
+    }
+
+    else if (isProj(sig, &i, x)) {
+        fout << "Proj" << i;
+    } else if (isRec(sig, var, le)) {
+        fout << "REC " << *var;
+    }
+
+    else if (isSigIntCast(sig, x)) {
+        fout << "int";
+    } else if (isSigBitCast(sig, x)) {
+        fout << "bit";
+    } else if (isSigFloatCast(sig, x)) {
+        fout << "float";
+    }
+#if 0
+    else if ( isSigButton(sig, label) ) 			{ fout << "button \"" << *label << '"'; }
+    else if ( isSigCheckbox(sig, label) ) 			{ fout << "checkbox \"" << *label << '"'; }
+    else if ( isSigVSlider(sig, label,c,x,y,z) )	{ fout << "vslider \"" << *label << '"';  }
+    else if ( isSigHSlider(sig, label,c,x,y,z) )	{ fout << "hslider \"" << *label << '"';  }
+    else if ( isSigNumEntry(sig, label,c,x,y,z) )	{ fout << "nentry \"" << *label << '"';  }
+    
+    else if ( isSigVBargraph(sig, label,x,y,z) )	{ fout << "vbargraph \"" << *label << '"'; 	}
+    else if ( isSigHBargraph(sig, label,x,y,z) )	{ fout << "hbargraph \"" << *label << '"'; 	}
+#else
+    else if (isSigButton(sig, label)) {
+        fout << "button";
+    } else if (isSigCheckbox(sig, label)) {
+        fout << "checkbox";
+    } else if (isSigVSlider(sig, label, c, x, y, z)) {
+        fout << "vslider";
+    } else if (isSigHSlider(sig, label, c, x, y, z)) {
+        fout << "hslider";
+    } else if (isSigNumEntry(sig, label, c, x, y, z)) {
+        fout << "nentry";
+    }
+
+    else if (isSigVBargraph(sig, label, x, y, z)) {
+        fout << "vbargraph";
+    } else if (isSigHBargraph(sig, label, x, y, z)) {
+        fout << "hbargraph";
+    }
+#endif
+    else if (isSigAttach(sig, x, y)) {
+        fout << "attach";
+    }
+
+    else if (isSigAssertBounds(sig, x, y, z)) {
+        fout << "assertbounds";
+    }
+
+    else if (isSigLowest(sig, x)) {
+        fout << "lowest";
+    }
+
+    else if (isSigHighest(sig, x)) {
+        fout << "highest";
+    }
+
+    else {
+        std::stringstream error;
+        error << "ERROR : sigToGraph.cpp, unrecognized signal : " << *sig << std::endl;
+        throw faustexception(error.str());
+    }
+
+    return fout.str();
+}
+
 void VhdlProducer::exportGraph(std::ostream& out) const
 {
     out << "digraph {" << std::endl;
     for (size_t i = 0; i < _vertices.size(); ++i) {
-        out << "\"" << std::hex << _vertices[i].node_hash << "_" << std::dec << i << "\" [label=<" << _vertices[i].signal->node() << "<BR /><FONT POINT-SIZE=\"10\">id: " << i << ", pipeline stages: " << _vertices[i].pipeline_stages << "</FONT>>, weight=\"" << _vertices[i].pipeline_stages << "\"];" << std::endl;
+      out << "\"" << std::hex << _vertices[i].node_hash << "_" << std::dec << i << "\" [label=<" << "<BR /><FONT POINT-SIZE=\"12\">id: " << i << ", " 
+        << _vertices[i].signal->node() << " " ;
+      
+	// pipeline stage does not work
+	// << ", pipeline stages: " << _vertices[i].pipeline_stages
+        if (( _vertices[i].signal->node().type() != kIntNode) && (_vertices[i].signal->node().type() != kDoubleNode))
+            out << VhdlProducer::sigLabel(_vertices[i].signal);
+        out << "</FONT>>, weight=\"" << _vertices[i].pipeline_stages << "\"];" << std::endl;
         for (auto edge : _edges[i]) {
-            out << "\"" << std::hex << _vertices[i].node_hash << "_"  << std::dec << i << "\" -> \"" << std::hex << _vertices[edge.target].node_hash << std::dec << "_" << edge.target << "\" [label=\"" << edge.register_count << "\",weight=\"" << edge.register_count << "\"];" << std::endl;
+	  out << "\"" << std::hex << _vertices[i].node_hash << "_"  << std::dec << i << "\" -> \"" << std::hex << _vertices[edge.target].node_hash << std::dec << "_" << edge.target << "\" [label=\"" << edge.register_count << "\",weight=\"" << edge.register_count << "\"];" << std::endl;
         }
     }
 

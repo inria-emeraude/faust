@@ -783,10 +783,15 @@ static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* ou
     signals = simplifyToNormalForm(signals);
     VhdlProducer vhdl_prod = VhdlProducer(signals, gGlobal->gClassName, numInputs, numOutputs);
     vhdl_prod.initializeFromSignal(); 
+    if (gGlobal->gVHDLTrace) {
+        std::ofstream dot_output("vhdl_graph_orig.dot");
+        vhdl_prod.exportGraph(dot_output);
+        dot_output.close();
+    }
     vhdl_prod.optimize(); 
 
     if (gGlobal->gVHDLTrace) {
-        std::ofstream dot_output("vhdl_graph.dot");
+        std::ofstream dot_output("vhdl_graph_retimed.dot");
         vhdl_prod.exportGraph(dot_output);
         dot_output.close();
     }

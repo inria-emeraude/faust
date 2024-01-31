@@ -33,6 +33,7 @@ This program is distributed in the hope that it will be useful,
 #include <fstream>
 #include <optional>
 #include <iostream>
+#include <string>
 
 typedef std::vector<int> Retiming;
 // Target sample rate in kHz
@@ -188,6 +189,7 @@ class VhdlProducer : public SignalVisitor {
     /** Applies an optimal retiming to the circuit, minimizing the feasible clock period */
     void retiming();
 
+    std::string sigLabel(const Tree sig) const;
     
     // Starts the Faust tree visit
     void initializeFromSignal() {
