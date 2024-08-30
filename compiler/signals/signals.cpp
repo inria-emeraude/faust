@@ -693,6 +693,11 @@ LIBFAUST_API Tree sigSin(Tree x)
     return sigExtended1(gGlobal->gSinPrim->box(), x);
 }
 
+LIBFAUST_API bool isSigSin(Tree t)
+{
+    return isTree(t, gGlobal->gSinPrim->symbol());
+}
+
 LIBFAUST_API Tree sigRint(Tree x)
 {
     return sigExtended1(gGlobal->gRintPrim->box(), x);

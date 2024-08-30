@@ -178,6 +178,7 @@ LIBFAUST_API Tree sigAcos(Tree x);
 LIBFAUST_API Tree sigTan(Tree x);
 LIBFAUST_API Tree sigSqrt(Tree x);
 LIBFAUST_API Tree sigSin(Tree x);
+LIBFAUST_API bool isSigSin(Tree s);
 LIBFAUST_API Tree sigRint(Tree x);
 LIBFAUST_API Tree sigRemainder(Tree x, Tree y);
 LIBFAUST_API Tree sigPow(Tree x, Tree y);

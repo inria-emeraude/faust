@@ -51,6 +51,14 @@ class TreeTraversal : public Garbageable {
     virtual ~TreeTraversal() = default;
 
     std::map<Tree, int> fVisited;  // visiting counter
+    std::map<Tree, int> fVisitedForRetiming;  // visiting counter for the application of the retiming
+    std::map<Tree, bool> fFinished;        // memoization
+
+    void tab(int n, std::ostream& fout)
+    {
+        fout << '\n';
+        while (n--) fout << '\t';
+    }
 
     virtual void self(Tree t)
     {

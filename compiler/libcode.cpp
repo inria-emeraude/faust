@@ -59,6 +59,7 @@
 #include "sigprint.hh"
 #include "sigtype.hh"
 #include "timing.hh"
+#include "sigRetiming.hh"
 
 #ifdef C_BUILD
 #include "c_code_container.hh"
@@ -854,18 +855,34 @@ static void compileDlang(Tree signals, int numInputs, int numOutputs, ostream* o
 static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* out)
 {
 #ifdef VHDL_BUILD
-    signals                = simplifyToNormalForm(signals);
+    signals = simplifyToNormalForm(signals);
     VhdlProducer vhdl_prod = VhdlProducer(signals, gGlobal->gClassName, numInputs, numOutputs);
-    vhdl_prod.optimize();
+
+
+    // Generate the .dot file of the DAG graph before retiming
     if (gGlobal->gVHDLTrace) {
-        std::ofstream dot_output("vhdl_graph.dot");
+        std::ofstream dot_output("vhdl_graph_orig.dot");
         vhdl_prod.exportGraph(dot_output);
         dot_output.close();
     }
-    vhdl_prod.generate(*out);
-    if (gUseCout) {
-        cout << dynamic_cast<ostringstream*>(out)->str();
+
+    
+
+    // Apply retiming
+    Tree signals_retimed = sigRetiming(signals);
+    vhdl_prod.applyRetiming(signals_retimed, signals);
+
+    // Generate the .dot file of the DAG graph after retiming
+    if (gGlobal->gVHDLTrace) {
+        std::ofstream dot_output("vhdl_graph_retimed.dot");
+        vhdl_prod.exportGraph(dot_output);
+        dot_output.close();
     }
+
+    
+    // Generate VHDL code
+    vhdl_prod.generate(*out);
+    if (gUseCout) cout << dynamic_cast<ostringstream*>(out)->str();
 #else
     throw faustexception("ERROR : -lang vhdl not supported since VHDL backend is not built\n");
 #endif
