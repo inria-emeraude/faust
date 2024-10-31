@@ -50,7 +50,7 @@ void sigToGraph(Tree L, ostream& fout)
     set<Tree> alreadyDrawn;
 
     fout << "strict digraph loopgraph {\n"
-         << "    rankdir=LR; node [fontsize=10];" << endl;
+         << "    rankdir=BT; node [fontsize=10];" << endl;
     int out = 0;
     while (isList(L)) {
         recdraw(hd(L), alreadyDrawn, fout);
