@@ -166,11 +166,6 @@ Tree SignalRetimer::transformation(Tree sig)
         Tree res     = sigOutput(i, x2);
         fTiming[res] = fTiming[x2];  // no register here
         return res;
-    } else if (isSigClocked(sig, h, x)) {
-        Tree v       = self(x);
-        Tree res     = sigClocked(h, v);
-        fTiming[res] = fTiming[v];
-        return res;
     } else if (isSigDelay1(sig, x)) {
         Tree v       = self(x);
         Tree res     = sigRegister(1, sigDelay1(v));
