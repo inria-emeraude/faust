@@ -53,9 +53,13 @@ class RustCodeContainer : public virtual CodeContainer {
     }
     virtual ~RustCodeContainer() {}
 
-    virtual void              produceClass();
+    virtual void produceClass();
+    void         generateComputeHeader(int n, std::ostream* fOut, int fNumInputs, int fNumOutputs);
+    void generateComputeInterfaceHeader(int n, std::ostream* fOut, int fNumInputs, int fNumOutputs);
+    void generateComputeInterface(int tab);
     virtual void              generateCompute(int tab) = 0;
     void                      produceInternal();
+    void                      produceFaustDspBlob();
     virtual dsp_factory_base* produceFactory();
     virtual void              produceInfoFunctions(int tabs, const std::string& classname,
                                                    const std::string& obj, bool ismethod,

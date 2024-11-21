@@ -1674,7 +1674,13 @@ bool global::processCmdline(int argc, const char* argv[])
     if (gOneSample && gOutputLang != "cpp" && gOutputLang != "c" && gOutputLang != "dlang" &&
         !startWith(gOutputLang, "cmajor") && gOutputLang != "fir") {
         throw faustexception(
-            "ERROR : '-os' option cannot only be used with 'cpp', 'c', 'fir' or 'cmajor' "
+            "ERROR : '-os' option can only be used with 'cpp', 'c', 'fir' or 'cmajor' "
+            "backends\n");
+    }
+
+    if (gExtControl && gOutputLang != "cpp" && gOutputLang != "c" && gOutputLang != "cmajor") {
+        throw faustexception(
+            "ERROR : '-ec' option can only be used with 'cpp', 'c' or 'cmajor' "
             "backends\n");
     }
 
@@ -2031,6 +2037,10 @@ static void enumBackends(ostream& out)
 
 #ifdef RUST_BUILD
     out << dspto << "Rust" << endl;
+#endif
+
+#ifdef SDF3_BUILD
+    out << dspto << "SDF3" << endl;
 #endif
 
 #ifdef TEMPLATE_BUILD
@@ -2434,6 +2444,10 @@ string global::printHelp()
          << endl;
     sstr << tab
          << "-norm       --normalized-form           print signals in normalized form and exit."
+         << endl;
+    sstr << tab
+         << "-norm1      --normalized-form1          print signals in normalized form with IDs for "
+            "shared sub-expressions and exit."
          << endl;
     sstr << tab
          << "-me         --math-exceptions           check / for 0 as denominator and remainder, "

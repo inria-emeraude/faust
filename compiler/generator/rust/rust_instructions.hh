@@ -241,22 +241,14 @@ class RustInstVisitor : public TextInstVisitor {
 
         std::string name = inst->fBufferName2;
 
-        // Build pattern matching + if let line
-        *fOut << "let (";
-        for (int i = 0; i < inst->fChannels; ++i) {
-            if (i > 0) {
-                *fOut << ", ";
-            }
-            *fOut << name << i;
-        }
-        *fOut << ") = if let [";
+        *fOut << "let [";
         for (int i = 0; i < inst->fChannels; ++i) {
             *fOut << name << i << ", ";
         }
-        *fOut << "..] = " << name << " {";
+        *fOut << "] = " << name << ";";
 
         // Build fixed size iterator variables
-        fTab++;
+
         for (int i = 0; i < inst->fChannels; ++i) {
             tab(fTab, *fOut);
             *fOut << "let " << name << i << " = " << name << i << "[..count as usize]";
@@ -274,30 +266,6 @@ class RustInstVisitor : public TextInstVisitor {
                 }
             }
         }
-
-        // Build return tuple
-        tab(fTab, *fOut);
-        *fOut << "(";
-        for (int i = 0; i < inst->fChannels; ++i) {
-            if (i > 0) {
-                *fOut << ", ";
-            }
-            *fOut << name << i;
-        }
-        *fOut << ")";
-
-        // Build else branch
-        fTab--;
-        tab(fTab, *fOut);
-        *fOut << "} else {";
-
-        fTab++;
-        tab(fTab, *fOut);
-        *fOut << "panic!(\"wrong number of " << name << "\");";
-
-        fTab--;
-        tab(fTab, *fOut);
-        *fOut << "};";
         tab(fTab, *fOut);
     }
 
@@ -312,12 +280,6 @@ class RustInstVisitor : public TextInstVisitor {
 
         // Only generates additional functions
         if (fMathLibTable.find(inst->fName) == fMathLibTable.end()) {
-            // Prototype
-            // Since functions are attached to a trait they must not be prefixed with "pub".
-            // In case we need a mechanism to attach functions to both traits and normal
-            // impls, we need a mechanism to forward the information whether to use "pub"
-            // or not. In the worst case, we have to prefix the name string like "pub fname",
-            // and handle the prefix here.
             *fOut << "fn " << inst->fName;
             generateFunDefArgs(inst);
             generateFunDefBody(inst);
@@ -565,13 +527,13 @@ class RustInstVisitor : public TextInstVisitor {
 
     virtual void visit(Select2Inst* inst)
     {
-        *fOut << "if ";
+        *fOut << "(if ";
         inst->fCond->accept(this);
         *fOut << " != 0 {";
         inst->fThen->accept(this);
         *fOut << "} else {";
         inst->fElse->accept(this);
-        *fOut << "}";
+        *fOut << "})";
     }
 
     virtual void visit(IfInst* inst)

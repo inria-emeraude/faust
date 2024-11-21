@@ -95,7 +95,7 @@ Tree InstructionsCompiler::prepare(Tree LS)
         cout << ppsig(L1) << endl;
         throw faustexception("Dump normal form finished...\n");
     } else if (gGlobal->gDumpNorm == 1) {
-        ppsigShared(L1, cout, true);
+        ppsigShared(L1, cout, false);
         throw faustexception("Dump shared normal form finished...\n");
     } else if (gGlobal->gDumpNorm == 2) {
         // Print signal tree type
@@ -888,7 +888,8 @@ ValueInst* InstructionsCompiler::generateFVar(Tree sig, Tree type, const string&
 {
     // Check access (handling 'fFullCount' as a special case)
     if ((name != fFullCount && !gGlobal->gAllowForeignVar) ||
-        (name == fFullCount && (gGlobal->gOneSample || gGlobal->gOneSampleControl))) {
+        (name == fFullCount &&
+         (gGlobal->gOneSample || gGlobal->gOneSampleControl || gGlobal->gExtControl))) {
         stringstream error;
         error << "ERROR : accessing foreign variable '" << name << "'"
               << " is not allowed in this compilation mode" << endl;

@@ -1,4 +1,4 @@
-% man(1) Version 2.75.4 (12-August-2024) | Faust man page
+% man(1) Version 2.76.0 (08-November-2024) | Faust man page
 
 NAME
 ====
@@ -52,7 +52,7 @@ Code generation options:
 ---------------------------------------
 
   **-lang** \<lang> **--language**                 select output language,
-                                          'lang' should be c, cpp (default), cmajor, codebox, csharp, dlang, fir, interp, java, jax, jsfx, julia, llvm, ocpp, rust, vhdl or wast/wasm.
+                                          'lang' should be c, cpp (default), cmajor, codebox, csharp, dlang, fir, interp, java, jax, jsfx, julia, llvm, ocpp, rust, sdf3, vhdl or wast/wasm.
 
   **-single**     **--single-precision-floats**   use single precision floats for internal computations (default).
 
@@ -217,6 +217,8 @@ Debug options:
   **-rg**         **--retiming-graph**            print the internal signal graph after retiming in dot format.
 
   **-norm**       **--normalized-form**           print signals in normalized form and exit.
+
+  **-norm1**      **--normalized-form1**          print signals in normalized form with IDs for shared sub-expressions and exit.
 
   **-me**         **--math-exceptions**           check / for 0 as denominator and remainder, fmod, sqrt, log10, log, acos, asin functions domain.
 

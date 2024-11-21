@@ -140,6 +140,10 @@
 #include "vhdl/vhdl_producer.hh"
 #endif
 
+#ifdef SDF3_BUILD
+#include "sdf3/signal2SDF.hh"
+#endif
+
 #ifdef MLIR_BUILD
 #include "mlir/mlir_code_container.hh"
 #endif
@@ -485,7 +489,8 @@ static void compileCodebox(Tree signals, int numInputs, int numOutputs, ostream*
 
     // "one sample control" model by default;
     gGlobal->gOneSampleControl = true;
-    gGlobal->gNeedManualPow = false;  // Standard pow function will be used in pow(x,y) when y in an
+    // Standard pow function will be used in pow(x,y) when y in an integer
+    gGlobal->gNeedManualPow = false;
 
     gContainer =
         CodeboxCodeContainer::createContainer(gGlobal->gClassName, numInputs, numOutputs, out);
@@ -731,8 +736,8 @@ static void compileCmajor(Tree signals, int numInputs, int numOutputs, ostream* 
 
     // "one sample control" model by default;
     gGlobal->gOneSampleControl = true;
-    gGlobal->gNeedManualPow =
-        false;  // Standard pow function will be used in pow(x,y) when y in an integer
+    // Standard pow function will be used in pow(x,y) when y in an integer
+    gGlobal->gNeedManualPow = false;
 
     gContainer =
         CmajorCodeContainer::createContainer(gGlobal->gClassName, numInputs, numOutputs, out);
@@ -883,8 +888,6 @@ static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* ou
         dot_output.close();
     }
 
-    
-
     // Apply retiming
     Tree signals_retimed = sigRetiming(signals);
     vhdl_prod.applyRetiming(signals_retimed, signals);
@@ -895,13 +898,26 @@ static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* ou
         vhdl_prod.exportGraph(dot_output);
         dot_output.close();
     }
-
     
     // Generate VHDL code
     vhdl_prod.generate(*out);
     if (gUseCout) cout << dynamic_cast<ostringstream*>(out)->str();
 #else
     throw faustexception("ERROR : -lang vhdl not supported since VHDL backend is not built\n");
+#endif
+}
+
+static void compileSdf3(Tree signals, ostream* out)
+{
+#ifdef SDF3_BUILD
+    signals = simplifyToNormalForm(signals);
+    Signal2SDF V;
+    V.sigToSDF(signals, *out);
+    if (gUseCout) {
+        cout << dynamic_cast<ostringstream*>(out)->str();
+    }
+#else
+    throw faustexception("ERROR : -lang sdf3 not supported since SDF3 backend is not built\n");
 #endif
 }
 
@@ -1118,6 +1134,10 @@ static void generateCode(Tree signals, int numInputs, int numOutputs, bool gener
         return;
     } else if (startWith(gGlobal->gOutputLang, "mlir")) {
         compileMlir(signals, numInputs, numOutputs, gDst.get());
+    } else if (startWith(gGlobal->gOutputLang, "sdf3")) {
+        compileSdf3(signals, gDst.get());
+        // SDF3 does not create a compiler, code is already generated here.
+        return;
     } else {
         stringstream error;
         error << "ERROR : cannot find backend for "
