@@ -865,13 +865,12 @@ static void compileDlang(Tree signals, int numInputs, int numOutputs, ostream* o
 static void compileMlir(Tree signals, int numInputs, int numOutputs, ostream* out) 
 {
 // #ifdef MLIR_BUILD
-    gContainer = MLIRCodeContainer::createContainer(gGlobal->gClassName,
-                                                    numInputs, numOutputs, 
-                                                    out);
-
-
+    signals = simplifyToNormalForm(signals);
+    
+    MLIRSignalVisitor msv;
+    msv.visit(signals);
+    msv.print(*out);
 // #endif
-
 }
 
 static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* out)
@@ -1134,6 +1133,8 @@ static void generateCode(Tree signals, int numInputs, int numOutputs, bool gener
         return;
     } else if (startWith(gGlobal->gOutputLang, "mlir")) {
         compileMlir(signals, numInputs, numOutputs, gDst.get());
+        // MLIR does not create a compiler, code is already generated here.
+        return;
     } else if (startWith(gGlobal->gOutputLang, "sdf3")) {
         compileSdf3(signals, gDst.get());
         // SDF3 does not create a compiler, code is already generated here.
