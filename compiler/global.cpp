@@ -2041,6 +2041,10 @@ static void enumBackends(ostream& out)
     out << dspto << "VHDL" << endl;
 #endif
 
+#ifdef MLIR_BUILD
+    out << dspto << "MLIR" << endl;
+#endif
+
 #ifdef WASM_BUILD
     out << dspto << "WebAssembly (wast/wasm)" << endl;
 #endif
@@ -2121,7 +2125,7 @@ string global::printHelp()
          << "                                        'lang' should be c, cpp (default), cmajor, "
             "codebox, csharp, "
             "dlang, fir, interp, java, jax, jsfx, julia, llvm, "
-            "ocpp, rust, vhdl or wast/wasm."
+            "ocpp, rust, vhdl, mlir or wast/wasm."
          << endl;
 #endif
     sstr << tab

@@ -19,6 +19,7 @@
  ************************************************************************
  ************************************************************************/
 
+#include "mlir/mlir_code_container.hh"
 #ifdef WIN32
 #pragma warning(disable : 4996 4146 4244)
 #endif
@@ -137,6 +138,10 @@
 
 #ifdef VHDL_BUILD
 #include "vhdl/vhdl_producer.hh"
+#endif
+
+#ifdef MLIR_BUILD
+#include "mlir/mlir_code_container.hh"
 #endif
 
 using namespace std;
@@ -852,6 +857,18 @@ static void compileDlang(Tree signals, int numInputs, int numOutputs, ostream* o
 #endif
 }
 
+static void compileMlir(Tree signals, int numInputs, int numOutputs, ostream* out) 
+{
+// #ifdef MLIR_BUILD
+    gContainer = MLIRCodeContainer::createContainer(gGlobal->gClassName,
+                                                    numInputs, numOutputs, 
+                                                    out);
+
+
+// #endif
+
+}
+
 static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* out)
 {
 #ifdef VHDL_BUILD
@@ -1099,6 +1116,8 @@ static void generateCode(Tree signals, int numInputs, int numOutputs, bool gener
         compileVhdl(signals, numInputs, numOutputs, gDst.get());
         // VHDL does not create a compiler, code is already generated here.
         return;
+    } else if (startWith(gGlobal->gOutputLang, "mlir")) {
+        compileMlir(signals, numInputs, numOutputs, gDst.get());
     } else {
         stringstream error;
         error << "ERROR : cannot find backend for "

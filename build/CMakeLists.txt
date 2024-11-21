@@ -70,6 +70,7 @@ set (FAUST_INC ${SRCDIR}
 	${SRCDIR}/generator/rust
 	${SRCDIR}/generator/cmajor
 	${SRCDIR}/generator/vhdl
+	${SRCDIR}/generator/mlir
 	${SRCDIR}/normalize ${SRCDIR}/parallelize ${SRCDIR}/parser
 	${SRCDIR}/patternmatcher ${SRCDIR}/propagate ${SRCDIR}/signals
 	${SRCDIR}/tlib ${SRCDIR}/transform ${SRCDIR}/utils
@@ -180,6 +181,18 @@ else()
 	set(CMAKE_CXX_FLAGS_RELEASE "-O3 -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-overloaded-virtual")
 endif()
 
+# TODO:
+set (INCLUDE_MLIR ON)
+
+if (INCLUDE_MLIR)
+	set(MLIR_DIR /usr/lib/llvm-19/lib/cmake/mlir)
+	list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/mlir")
+	find_package(MLIR REQUIRED CONFIG)
+	find_package(MLIRFaust REQUIRED)
+	include_directories(${MLIRFaust_INCLUDE_DIRS})
+	include_directories(${MLIR_INCLUDE_DIRS})
+endif()
+
 
 ####################################
 # Add the different targets
@@ -189,6 +202,9 @@ if (INCLUDE_EXECUTABLE)
 	target_compile_definitions (faust PRIVATE ${FAUST_DEFINITIONS})
 	if(INCLUDE_LLVM)
 		target_link_directories(faust PRIVATE "${LLVM_LIB_DIR}")
+	endif()
+	if (INCLUDE_MLIR)
+		target_link_libraries(faust PRIVATE ${MLIRFaust_LIBRARIES})
 	endif()
 	target_include_directories (faust PRIVATE ${FAUST_INC} ${LLVM_INCLUDE_DIRS})
 	target_link_libraries (faust PRIVATE ${FAUST_LIBS})
@@ -204,6 +220,9 @@ if (INCLUDE_STATIC)
 	target_compile_definitions (staticlib PRIVATE ${FAUST_DEFINITIONS})
 	if(INCLUDE_LLVM)
 		target_link_directories(staticlib PRIVATE "${LLVM_LIB_DIR}")
+	endif()
+	if (INCLUDE_MLIR)
+		target_link_libraries(staticlib PRIVATE ${MLIRFaust_LIBRARIES})
 	endif()
 	target_include_directories (staticlib PRIVATE ${FAUST_INC} ${LLVM_INCLUDE_DIRS})
 	target_link_libraries (staticlib PRIVATE ${FAUST_LIBS})
@@ -239,10 +258,14 @@ endif()
 
 # dynamic faust library
 if (INCLUDE_DYNAMIC)
+	message(STATUS "DYNAMIC!")
 	add_library(dynamiclib SHARED ${SRC} ${HH})
 	target_compile_definitions (dynamiclib PRIVATE ${FAUST_DEFINITIONS})
 	if(INCLUDE_LLVM)
 		target_link_directories(dynamiclib PRIVATE "${LLVM_LIB_DIR}")
+	endif()
+	if (INCLUDE_MLIR)
+		target_link_libraries(dynamiclib PRIVATE ${MLIRFaust_LIBRARIES})
 	endif()
 	target_include_directories (dynamiclib PRIVATE ${FAUST_INC} ${LLVM_INCLUDE_DIRS})
 	# set (FAUST_LIBS /usr/local/lib/libmir.a ${FAUST_LIBS})
@@ -274,6 +297,7 @@ endif()
 
 # self contained library
 if (SELF_CONTAINED_LIBRARY)
+	message(STATUS "SELF-CONTAINED!")
 	add_definitions( -DFAUST_SELF_CONTAINED_LIB )
 endif()
 
