@@ -25,6 +25,5 @@ set ( RUST_BACKEND   COMPILER STATIC DYNAMIC        CACHE STRING  "Include Rust 
 # Template is deactivated 
 set ( TEMPLATE_BACKEND   OFF    CACHE STRING  "Include Template backend"  FORCE )
 set ( VHDL_BACKEND   COMPILER STATIC DYNAMIC        CACHE STRING  "Include VHDL backend"      FORCE )
-set ( MLIR_BACKEND   COMPILER STATIC DYNAMIC        CACHE STRING  "Include MLIR backend"      FORCE )
 set ( WASM_BACKEND   COMPILER STATIC DYNAMIC WASM   CACHE STRING  "Include WASM backend"      FORCE )
 

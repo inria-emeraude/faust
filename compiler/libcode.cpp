@@ -867,8 +867,9 @@ static void compileMlir(Tree signals, int numInputs, int numOutputs, ostream* ou
 // #ifdef MLIR_BUILD
     signals = simplifyToNormalForm(signals);
     
-    MLIRSignalVisitor msv;
-    msv.visit(signals);
+    MLIRBuilder msv;
+    msv.initialize(numInputs, numOutputs);
+    msv.build(signals);
     msv.print(*out);
 // #endif
 }
