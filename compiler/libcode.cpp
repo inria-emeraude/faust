@@ -19,7 +19,6 @@
  ************************************************************************
  ************************************************************************/
 
-#include "mlir/mlir_code_container.hh"
 #ifdef WIN32
 #pragma warning(disable : 4996 4146 4244)
 #endif
@@ -144,9 +143,9 @@
 #include "sdf3/signal2SDF.hh"
 #endif
 
-#ifdef MLIR_BUILD
+// #ifdef MLIR_BUILD
 #include "mlir/mlir_code_container.hh"
-#endif
+// #endif
 
 using namespace std;
 
@@ -864,14 +863,16 @@ static void compileDlang(Tree signals, int numInputs, int numOutputs, ostream* o
 
 static void compileMlir(Tree signals, int numInputs, int numOutputs, ostream* out) 
 {
-// #ifdef MLIR_BUILD
+#ifdef MLIR_BUILD
     signals = simplifyToNormalForm(signals);
     
     MLIRBuilder msv;
     msv.initialize(numInputs, numOutputs);
     msv.build(signals);
     msv.print(*out);
-// #endif
+#else
+    throw faustexception("ERROR : -lang mlir not supported since MLIR backend is not built\n");
+#endif
 }
 
 static void compileVhdl(Tree signals, int numInputs, int numOutputs, ostream* out)

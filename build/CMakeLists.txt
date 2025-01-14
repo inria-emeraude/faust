@@ -184,8 +184,6 @@ else()
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -fvisibility=hidden -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-overloaded-virtual")
 endif()
 
-set (INCLUDE_MLIR ON)
-
 if (INCLUDE_MLIR)
     if ( NOT DEFINED LLVM_CONFIG)
         set (LLVM_CONFIG llvm-config)
@@ -203,6 +201,7 @@ if (INCLUDE_MLIR)
     include_directories(faust-mlir/include)
     include_directories(faust-mlir/build/include)
 	include_directories(${MLIR_INCLUDE_DIRS})
+    add_definitions(-DMLIR_BUILD)
 endif()
 
 ####################################
