@@ -1,15 +1,13 @@
 #ifndef _MLIR_CODE_CONTAINER_H
 #define _MLIR_CODE_CONTAINER_H
 
-#include <llvm-19/llvm/ADT/ArrayRef.h>
-#include <llvm-19/llvm/Support/raw_ostream.h>
 #include <memory>
 #include <vector>
-#include "code_container.hh"
-#include "dsp_factory.hh"
-#include "faust/Dialect.h"
-#include "faust/Ops.h"
-#include "faust/Types.h"
+
+#include "faust/mlir/Dialect.h"
+#include "faust/mlir/Ops.h"
+#include "faust/mlir/Types.h"
+
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -18,11 +16,17 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Value.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+
+#include <llvm/Support/raw_os_ostream.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/Support/raw_ostream.h>
+
 #include "signalVisitor.hh"
 #include "signals.hh"
-#include "llvm/Support/raw_os_ostream.h"
 #include "sigtyperules.hh"
-#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "code_container.hh"
+#include "dsp_factory.hh"
 
 /**
  * @brief Builds a Faust MLIR IR from a graph of signals.

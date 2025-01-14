@@ -23,6 +23,7 @@ set (BINDIR ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set (LIBDIR ${CMAKE_CURRENT_SOURCE_DIR}/${LIBSDIR})
 
 set (CMAKE_CXX_STANDARD 17)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 #######################################
 # Output options
@@ -197,11 +198,27 @@ if (INCLUDE_MLIR)
     set(MLIR_DIR "${LLVM_LIB_DIR_STRIPPED}/cmake/mlir")
     message(STATUS "MLIR_DIR: ${MLIR_DIR}")
     find_package(MLIR REQUIRED CONFIG)
-    add_subdirectory(faust-mlir)
-    include_directories(faust-mlir/include)
-    include_directories(faust-mlir/build/include)
-	include_directories(${MLIR_INCLUDE_DIRS})
-    add_definitions(-DMLIR_BUILD)
+    find_path(FAUST_MLIR_INCLUDE_DIR
+        NAMES faust/mlir/Faust.td
+        DOC "Path of Faust.td, the main tablegen file for the faust-mlir dialect"
+    )
+    find_library(FAUST_MLIR_LIBRARY
+        NAMES MLIRFaust
+        DOC "MLIRFaust library"
+    )
+    include(FindPackageHandleStandardArgs)
+    find_package_handle_standard_args(
+        FAUST_MLIR
+        FOUND_VAR FAUST_MLIR_FOUND
+        REQUIRED_VARS
+            FAUST_MLIR_LIBRARY
+            FAUST_MLIR_INCLUDE_DIR
+    )
+    if (FAUST_MLIR_FOUND)
+        add_definitions(-DMLIR_BUILD)
+    else()
+        message(FATAL_ERROR "Couldn't find MLIRFaust!")
+    endif()
 endif()
 
 ####################################
@@ -215,8 +232,8 @@ if (INCLUDE_EXECUTABLE)
 	endif()
 	if (INCLUDE_MLIR)
         message(STATUS "Linking with MLIRFaust")
-		target_link_libraries(faust PRIVATE MLIRFaust)
-        target_include_directories(faust PRIVATE ${MLIR_FAUST_INCLUDE_DIRS})
+		target_link_libraries(faust PRIVATE ${FAUST_MLIR_LIBRARY} LLVMSupport)
+        target_include_directories(faust PRIVATE ${FAUST_MLIR_INCLUDE_DIR} ${MLIR_INCLUDE_DIRS})
 	endif()
 	target_include_directories (faust PRIVATE ${FAUST_INC} ${LLVM_INCLUDE_DIRS})
 	target_link_libraries (faust PRIVATE ${FAUST_LIBS})
@@ -234,7 +251,8 @@ if (INCLUDE_STATIC)
 		target_link_directories(staticlib PRIVATE "${LLVM_LIB_DIR}")
 	endif()
 	if (INCLUDE_MLIR)
-		target_link_libraries(staticlib PRIVATE MLIRFaust)
+        target_link_libraries(staticlib PRIVATE ${FAUST_MLIR_LIBRARY})
+        target_include_directories(staticlib PRIVATE ${FAUST_MLIR_INCLUDE_DIR})
 	endif()
 	target_include_directories (staticlib PRIVATE ${FAUST_INC} ${LLVM_INCLUDE_DIRS})
 	target_link_libraries (staticlib PRIVATE ${FAUST_LIBS})
@@ -275,7 +293,8 @@ if (INCLUDE_DYNAMIC)
 		target_link_directories(dynamiclib PRIVATE "${LLVM_LIB_DIR}")
 	endif()
 	if (INCLUDE_MLIR)
-		target_link_libraries(dynamiclib PRIVATE MLIRFaust)
+        target_link_libraries(dynamiclib PRIVATE ${FAUST_MLIR_LIBRARY})
+        target_include_directories(dynamiclib PRIVATE ${FAUST_MLIR_INCLUDE_DIR})
 	endif()
 	target_include_directories (dynamiclib PRIVATE ${FAUST_INC} ${LLVM_INCLUDE_DIRS})
 	# set (FAUST_LIBS /usr/local/lib/libmir.a ${FAUST_LIBS})
