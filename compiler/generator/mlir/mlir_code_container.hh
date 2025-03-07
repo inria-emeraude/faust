@@ -36,6 +36,7 @@ struct MLIRBuilder
     ::mlir::MLIRContext fContext;
     ::faust::GraphOp fGraph;
     std::unique_ptr<ImplicitLocOpBuilder> fBuilder;
+    std::vector<::faust::ProjOp> fProj;
 
     /**
      * @brief Get an MLIR Operation builder from the current context.
@@ -89,7 +90,7 @@ struct MLIRBuilder
         return b.create<T>(
             visit(x), 
             visit(y)
-        ).getResult();
+        );
     }
 
     template<typename T>
@@ -97,16 +98,11 @@ struct MLIRBuilder
         ImplicitLocOpBuilder& b = builder();
         return b.create<T>(
             visit(x)
-        ).getResult();
+        );
     }
 
-    mlir::Value visit(Tree sig) {
-        if (fVisited.count(sig)) {
-            return {};
-        } else {
-            fVisited.insert(sig);
-        }
-
+    mlir::Value visit(Tree sig) 
+    {
         int     i;
         int64_t i64;
         double  r;
@@ -118,40 +114,58 @@ struct MLIRBuilder
         sig->print(std::cerr);
         std::cerr << std::endl;
 
+        if (fVisited.count(sig)) {
+            std::cerr << "Signal already visited\n";
+            if (isProj(sig, &i, x)) {
+                return fProj[i];
+            }
+        } else {
+            fVisited.insert(sig);
+        }
+        
+        if (isList(sig)) {
+            do {
+                visit(hd(sig));
+                sig = tl(sig);        
+            } while (isList(sig));
+        }
+
         // Integer (i32) constant
         if (isSigInt(sig, &i)) {
             return b.create<faust::IntOp>(
                 b.getI32IntegerAttr(i)
-            ).getResult();
+            );
         // Integer (i64) constant
         } else if (isSigInt64(sig, &i64)) {
             return b.create<faust::IntOp>(
                 b.getI64IntegerAttr(i64)
-            ).getResult();
+            );
         // // Real constant
         } else if (isSigReal(sig, &r)) {
             return b.create<faust::RealOp>(
                 // TODO: parse global graph precision
                 b.getF64FloatAttr(double(r))
-            ).getResult();
+            );
         } else if (isSigDelay(sig, x, y)) {
             return b.create<faust::DelayOp>(
                 visit(x),
                 visit(y)
-            ).getResult();
+            );
         // } else if (isSigDelay1(sig, x)) {
         //     return b.create<faust::DelayOp>(
         //         visit(x),
         //         b.getI32IntegerAttr(1)
         //     ).getResult();
         } else if (isProj(sig, &i, x)) {
-            return b.create<faust::ProjOp>(
+            auto p = b.create<faust::ProjOp>(
                 visit(x),
                 b.getI32IntegerAttr(i)
-            ).getResult();
-        } else if (isTree(sig, gGlobal->SYMREC, x)) {
+            );
+            fProj.push_back(p);
+            return p;
+        } else if (isRec(sig, x, y)) {
             return b.create<faust::RecOp>(
-                visit(x)
+                visit(y)
             );
         // ----------------------------------------------------------------
         // Unary / Math
@@ -226,7 +240,7 @@ struct MLIRBuilder
         } else if (isSigInput(sig, &i)) {
             return b.create<::faust::InputOp>(
                 b.getUI32IntegerAttr(i)
-            ).getResult();
+            );
         } else if (isSigFloatCast(sig)) {
         }
         std::cerr << "Unimplemented signal type: ";
