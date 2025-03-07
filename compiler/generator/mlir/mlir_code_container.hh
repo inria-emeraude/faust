@@ -1,6 +1,7 @@
 #ifndef _MLIR_CODE_CONTAINER_H
 #define _MLIR_CODE_CONTAINER_H
 
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
@@ -19,7 +20,9 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include "node.hh"
 #include "signals.hh"
+#include "tree.hh"
 #include "xtended.hh"
 
 /**
@@ -51,8 +54,8 @@ struct MLIRBuilder
      * @param numInputs 
      * @param numOutputs 
      */
-    void initialize(int numInputs, int numOutputs) {
-
+    void initialize(int numInputs, int numOutputs) 
+    {
         fContext.loadDialect<faust::FaustDialect>();
         auto loc = mlir::UnknownLoc::get(&fContext);
         fMod = mlir::ModuleOp::create(loc);
@@ -63,54 +66,38 @@ struct MLIRBuilder
         // fBuilder->setInsertionPointToEnd(fMod.getBody());
         SmallVector<::mlir::NamedAttribute> ins;
         SmallVector<::mlir::Type> outs;
-        auto fType = faust::SignalType::get(&fContext, fBuilder->getF32Type());
-        for (int n = 0; n < numInputs; ++n) {
-             auto in = fBuilder->getNamedAttr("in0", TypeAttr::get(fType));
-             ins.push_back(in);
-        }
-        for (int n = 0; n < numOutputs; ++n) {
-             // TODO: check float precision:
-            outs.push_back(fType);            
-        }
+        faust::RealType rType = faust::RealType::get(&fContext);
+
         fGraph = fBuilder->create<faust::GraphOp>(
             // add input signal types,
             outs,
             fBuilder->getStringAttr("process"), 
             fBuilder->getDictionaryAttr({}),
-            // add output signal graphs,
-            fBuilder->getDictionaryAttr(ins)                                 
+            fBuilder->getI64IntegerAttr(numInputs),
+            fBuilder->getI64IntegerAttr(numOutputs)                           
         );
-        auto& block = fGraph.getBodyRegion().emplaceBlock();
+        auto& block = fGraph.getBody().emplaceBlock();
         for (auto& _in: ins) {
-             block.addArgument(fType, fBuilder->getLoc());
+             block.addArgument(rType, fBuilder->getLoc());
         }
         fBuilder->setInsertionPointToStart(&block);
-    }
-
-    faust::SignalType getSignalType() {
-        return faust::SignalType::get(
-            builder().getContext(),
-            builder().getF32Type()
-        );
     }
 
     template<typename T>
     mlir::Value createBinOp(Tree x, Tree y) {
         ImplicitLocOpBuilder& b = builder();
         return b.create<T>(
-            getSignalType(),
             visit(x), 
             visit(y)
-        );
+        ).getResult();
     }
 
     template<typename T>
     mlir::Value createUnaryOp(Tree x) {
         ImplicitLocOpBuilder& b = builder();
         return b.create<T>(
-            getSignalType(),
             visit(x)
-        );
+        ).getResult();
     }
 
     mlir::Value visit(Tree sig) {
@@ -119,31 +106,52 @@ struct MLIRBuilder
         } else {
             fVisited.insert(sig);
         }
+
         int     i;
         int64_t i64;
         double  r;
         Tree    x, y, z, t;
 
         ImplicitLocOpBuilder& b = builder();
-        faust::SignalType fType = getSignalType();
+
+        std::cerr << "Visiting signal: ";
+        sig->print(std::cerr);
+        std::cerr << std::endl;
+
         // Integer (i32) constant
         if (isSigInt(sig, &i)) {
-            return b.create<faust::ConstantOp>(
-                fType,
+            return b.create<faust::IntOp>(
                 b.getI32IntegerAttr(i)
-            );
+            ).getResult();
         // Integer (i64) constant
         } else if (isSigInt64(sig, &i64)) {
-            return b.create<faust::ConstantOp>(
-                fType,
+            return b.create<faust::IntOp>(
                 b.getI64IntegerAttr(i64)
-            );
-        // Real constant
+            ).getResult();
+        // // Real constant
         } else if (isSigReal(sig, &r)) {
-            return b.create<faust::ConstantOp>(
-                fType,
+            return b.create<faust::RealOp>(
                 // TODO: parse global graph precision
-                b.getF32FloatAttr(float(r))
+                b.getF64FloatAttr(double(r))
+            ).getResult();
+        } else if (isSigDelay(sig, x, y)) {
+            return b.create<faust::DelayOp>(
+                visit(x),
+                visit(y)
+            ).getResult();
+        // } else if (isSigDelay1(sig, x)) {
+        //     return b.create<faust::DelayOp>(
+        //         visit(x),
+        //         b.getI32IntegerAttr(1)
+        //     ).getResult();
+        } else if (isProj(sig, &i, x)) {
+            return b.create<faust::ProjOp>(
+                visit(x),
+                b.getI32IntegerAttr(i)
+            ).getResult();
+        } else if (isTree(sig, gGlobal->SYMREC, x)) {
+            return b.create<faust::RecOp>(
+                visit(x)
             );
         // ----------------------------------------------------------------
         // Unary / Math
@@ -210,18 +218,20 @@ struct MLIRBuilder
                 FBINOP(SOperator::kGE, faust::SupEqOp);
                 FBINOP(SOperator::kLT, faust::InfOp);
                 FBINOP(SOperator::kLE, faust::InfEqOp);
-                default:
-                    assert(false);
+                default: 
+                    std::cerr << "Unknown BinaryOp: " << i << std::endl;
+                    exit(EXIT_FAILURE);
             }
-        // Input signal
+        // Input signal:
         } else if (isSigInput(sig, &i)) {
-            return fGraph.getBodyRegion()
-                .getBlocks()
-                .front()
-                .getArgument(i);
+            return b.create<::faust::InputOp>(
+                b.getUI32IntegerAttr(i)
+            ).getResult();
         } else if (isSigFloatCast(sig)) {
         }
-        assert(false);
+        std::cerr << "Unimplemented signal type: ";
+        sig->print(std::cerr);
+        exit(EXIT_FAILURE);
     }
 
     void build(Tree sig) {
