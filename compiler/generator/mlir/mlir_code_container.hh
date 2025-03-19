@@ -10,6 +10,7 @@
 #include "faust/mlir/Ops.h"
 #include "faust/mlir/Types.h"
 
+#include "list.hh"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Location.h"
@@ -64,21 +65,16 @@ struct MLIRBuilder
         fBuilder = std::make_unique<ImplicitLocOpBuilder>(
             ImplicitLocOpBuilder::atBlockEnd(loc, fMod.getBody())
         );
-        // fBuilder->setInsertionPointToEnd(fMod.getBody());
-        SmallVector<::mlir::NamedAttribute> ins;
-        SmallVector<::mlir::Type> outs;
         faust::RealType rType = faust::RealType::get(&fContext);
 
         fGraph = fBuilder->create<faust::GraphOp>(
-            // add input signal types,
-            outs,
             fBuilder->getStringAttr("process"), 
             fBuilder->getDictionaryAttr({}),
             fBuilder->getI64IntegerAttr(numInputs),
             fBuilder->getI64IntegerAttr(numOutputs)                           
         );
         auto& block = fGraph.getBody().emplaceBlock();
-        for (auto& _in: ins) {
+        for (int n = 0; n < numInputs; ++n) {
              block.addArgument(rType, fBuilder->getLoc());
         }
         fBuilder->setInsertionPointToStart(&block);
@@ -117,18 +113,27 @@ struct MLIRBuilder
         if (fVisited.count(sig)) {
             std::cerr << "Signal already visited\n";
             if (isProj(sig, &i, x)) {
-                return fProj[i];
+                std::cerr << "Recursive 'proj' signal\n";
+                auto& block = fGraph.getBodyRegion().getBlocks().front();
+                for (auto& op : block.getOperations()) {
+                    if (::mlir::isa<::faust::ProjOp>(op)) {
+                        // TODO:
+                        return fProj[0];
+                    }
+                }
+                exit(EXIT_FAILURE);
             }
         } else {
             fVisited.insert(sig);
         }
         
-        if (isList(sig)) {
-            do {
-                visit(hd(sig));
-                sig = tl(sig);        
-            } while (isList(sig));
-        }
+        // if (isList(sig) && !isNil(sig)) {
+        //     do {
+        //         hd(sig)->print(std::cerr);
+        //         visit(hd(sig));
+        //         sig = tl(sig);        
+        //     } while (isList(sig));
+        // }
 
         // Integer (i32) constant
         if (isSigInt(sig, &i)) {
@@ -148,6 +153,7 @@ struct MLIRBuilder
             );
         } else if (isSigDelay(sig, x, y)) {
             return b.create<faust::DelayOp>(
+                ::faust::RealType::get(b.getContext()),
                 visit(x),
                 visit(y)
             );
@@ -158,14 +164,18 @@ struct MLIRBuilder
         //     ).getResult();
         } else if (isProj(sig, &i, x)) {
             auto p = b.create<faust::ProjOp>(
-                visit(x),
+                ::faust::RealType::get(b.getContext()),
                 b.getI32IntegerAttr(i)
             );
             fProj.push_back(p);
+            visit(x);            
             return p;
         } else if (isRec(sig, x, y)) {
             return b.create<faust::RecOp>(
-                visit(y)
+                ::faust::RealType::get(b.getContext()),
+                visit(hd(y)),
+                // TODO:
+                b.getI64IntegerAttr(0)
             );
         // ----------------------------------------------------------------
         // Unary / Math
@@ -242,7 +252,7 @@ struct MLIRBuilder
                 b.getUI32IntegerAttr(i)
             );
         } else if (isSigFloatCast(sig)) {
-        }
+        } 
         std::cerr << "Unimplemented signal type: ";
         sig->print(std::cerr);
         exit(EXIT_FAILURE);
@@ -259,6 +269,7 @@ struct MLIRBuilder
             outs.push_back(visit(sig));
         }
         builder().create<faust::OutputOp>(outs);
+        fMod.verify();
     }
 
     /**

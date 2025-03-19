@@ -85,7 +85,6 @@ set (FAUST_INC ${SRCDIR}
 # LLVM
 include (misc/llvm.cmake)
 if (INCLUDE_LLVM )
-
     if ((NOT DEFINED LLVM_LIBS AND NOT MSVC)
         OR NOT DEFINED LLVM_LIB_DIR
         OR NOT DEFINED LLVM_INCLUDE_DIRS
@@ -186,16 +185,19 @@ else()
 endif()
 
 if (INCLUDE_MLIR)
-    if ( NOT DEFINED LLVM_CONFIG)
-        set (LLVM_CONFIG llvm-config)
+    if ( NOT DEFINED MLIR_DIR) 
+        if ( NOT DEFINED LLVM_CONFIG)
+            set (LLVM_CONFIG llvm-config)
+        endif()
+        find_program (LC ${LLVM_CONFIG})
+        if (${LC} STREQUAL LC-NOTFOUND)
+            message (FATAL_ERROR "Cannot find program ${LLVM_CONFIG} (llvm-config or derived expected)")
+        endif()
+        execute_process (COMMAND ${LLVM_CONFIG} --libdir OUTPUT_VARIABLE LLVM_LIB_DIR)
+        string(STRIP ${LLVM_LIB_DIR} LLVM_LIB_DIR_STRIPPED)
+        set(MLIR_DIR "${LLVM_LIB_DIR_STRIPPED}/cmake/mlir")
     endif()
-    find_program (LC ${LLVM_CONFIG})
-    if (${LC} STREQUAL LC-NOTFOUND)
-        message (FATAL_ERROR "Cannot find program ${LLVM_CONFIG} (llvm-config or derived expected)")
-    endif()
-    execute_process (COMMAND ${LLVM_CONFIG} --libdir OUTPUT_VARIABLE LLVM_LIB_DIR)
-    string(STRIP ${LLVM_LIB_DIR} LLVM_LIB_DIR_STRIPPED)
-    set(MLIR_DIR "${LLVM_LIB_DIR_STRIPPED}/cmake/mlir")
+
     message(STATUS "MLIR_DIR: ${MLIR_DIR}")
     find_package(MLIR REQUIRED CONFIG)
     find_path(FAUST_MLIR_INCLUDE_DIR
