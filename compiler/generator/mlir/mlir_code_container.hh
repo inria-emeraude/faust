@@ -5,12 +5,20 @@
 #include <memory>
 #include <vector>
 
+#include "faust/gui/CInterface.h"
+#include "sigtyperules.hh"
+#include "sigPromotion.hh"
+#include "node.hh"
+#include "signals.hh"
+#include "tree.hh"
+#include "xtended.hh"
 #include "binop.hh"
+#include "list.hh"
+
 #include "faust/mlir/Dialect.h"
 #include "faust/mlir/Ops.h"
 #include "faust/mlir/Types.h"
 
-#include "list.hh"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Location.h"
@@ -21,10 +29,8 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include "node.hh"
-#include "signals.hh"
-#include "tree.hh"
-#include "xtended.hh"
+
+
 
 /**
  * @brief Builds a Faust MLIR IR from a graph of signals.
@@ -126,15 +132,6 @@ struct MLIRBuilder
         } else {
             fVisited.insert(sig);
         }
-        
-        // if (isList(sig) && !isNil(sig)) {
-        //     do {
-        //         hd(sig)->print(std::cerr);
-        //         visit(hd(sig));
-        //         sig = tl(sig);        
-        //     } while (isList(sig));
-        // }
-
         // Integer (i32) constant
         if (isSigInt(sig, &i)) {
             return b.create<faust::IntOp>(
@@ -147,21 +144,37 @@ struct MLIRBuilder
             );
         // // Real constant
         } else if (isSigReal(sig, &r)) {
-            return b.create<faust::RealOp>(
-                // TODO: parse global graph precision
-                b.getF64FloatAttr(double(r))
-            );
+            if (r == M_PI) {
+                return b.create<faust::PiOp>();
+            } else {
+                return b.create<faust::RealOp>(
+                    // TODO: parse global graph precision
+                    b.getF64FloatAttr(double(r))
+                );
+            }
+        } else if (isSigFConst(sig, x, y, z)) {
+            // Foreign constant:
+            std::string nm = name(y->node().getSym());
+            if (nm == "fSamplingFreq") {
+                return b.create<faust::SamplingFreqOp>();
+            } else {
+                exit(EXIT_FAILURE);
+            }            
         } else if (isSigDelay(sig, x, y)) {
             return b.create<faust::DelayOp>(
                 ::faust::RealType::get(b.getContext()),
                 visit(x),
                 visit(y)
             );
-        // } else if (isSigDelay1(sig, x)) {
-        //     return b.create<faust::DelayOp>(
-        //         visit(x),
-        //         b.getI32IntegerAttr(1)
-        //     ).getResult();
+        } else if (isSigDelay1(sig, x)) {
+            auto del1 = b.create<faust::IntOp>(
+                b.getI64IntegerAttr(1)
+            );
+            return b.create<faust::DelayOp>(
+                ::faust::RealType::get(b.getContext()),
+                visit(x),
+                del1
+            );
         } else if (isProj(sig, &i, x)) {
             auto p = b.create<faust::ProjOp>(
                 ::faust::RealType::get(b.getContext()),
@@ -258,7 +271,16 @@ struct MLIRBuilder
         exit(EXIT_FAILURE);
     }
 
+    Tree simplify(Tree sig) {
+        // Convert deBruijn recursion into symbolic recursion:
+        Tree L1 = deBruijn2Sym(sig);
+        // Annotate L1 with type information:
+        typeAnnotation(L1, gGlobal->gLocalCausalityCheck);
+        return L1;
+    }
+
     void build(Tree sig) {
+        sig = simplify(sig);
         std::vector<mlir::Value> outs;
         if (isList(sig)) {
             do {

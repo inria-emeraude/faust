@@ -864,8 +864,8 @@ static void compileDlang(Tree signals, int numInputs, int numOutputs, ostream* o
 static void compileMlir(Tree signals, int numInputs, int numOutputs, ostream* out) 
 {
 #ifdef MLIR_BUILD
-    signals = simplifyToNormalForm(signals);
-    
+    // Ideally, simplification would be done through MLIR passes,
+    // signals = simplifyToNormalForm(signals);    
     MLIRBuilder msv;
     msv.initialize(numInputs, numOutputs);
     msv.build(signals);
