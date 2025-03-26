@@ -5,9 +5,9 @@
 #include <memory>
 #include <vector>
 
-#include "faust/gui/CInterface.h"
+#include "instructions.hh"
+#include "sigtype.hh"
 #include "sigtyperules.hh"
-#include "sigPromotion.hh"
 #include "node.hh"
 #include "signals.hh"
 #include "tree.hh"
@@ -28,9 +28,6 @@
 #include <llvm/Support/raw_os_ostream.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/Support/raw_ostream.h>
-
-
-
 
 /**
  * @brief Builds a Faust MLIR IR from a graph of signals.
@@ -117,9 +114,7 @@ struct MLIRBuilder
         std::cerr << std::endl;
 
         if (fVisited.count(sig)) {
-            std::cerr << "Signal already visited\n";
             if (isProj(sig, &i, x)) {
-                std::cerr << "Recursive 'proj' signal\n";
                 auto& block = fGraph.getBodyRegion().getBlocks().front();
                 for (auto& op : block.getOperations()) {
                     if (::mlir::isa<::faust::ProjOp>(op)) {
@@ -152,6 +147,14 @@ struct MLIRBuilder
                     b.getF64FloatAttr(double(r))
                 );
             }
+        } else if (isSigIntCast(sig, x)) {
+            return b.create<faust::IntCastOp>(
+                visit(x)
+            );
+        } else if (isSigFloatCast(sig, x)) {
+            return b.create<faust::RealCastOp>(
+                visit(x)
+            );
         } else if (isSigFConst(sig, x, y, z)) {
             // Foreign constant:
             std::string nm = name(y->node().getSym());
@@ -162,7 +165,6 @@ struct MLIRBuilder
             }            
         } else if (isSigDelay(sig, x, y)) {
             return b.create<faust::DelayOp>(
-                ::faust::RealType::get(b.getContext()),
                 visit(x),
                 visit(y)
             );
@@ -171,13 +173,19 @@ struct MLIRBuilder
                 b.getI64IntegerAttr(1)
             );
             return b.create<faust::DelayOp>(
-                ::faust::RealType::get(b.getContext()),
                 visit(x),
                 del1
             );
         } else if (isProj(sig, &i, x)) {
+            ::Type fType = getCertifiedSigType(sig);
+            ::mlir::Type mType;
+            if (fType->nature() == Nature::kInt) {
+                mType = ::faust::IntegerType::get(&fContext);
+            } else {
+                mType = ::faust::RealType::get(&fContext);
+            }
             auto p = b.create<faust::ProjOp>(
-                ::faust::RealType::get(b.getContext()),
+                mType,
                 b.getI32IntegerAttr(i)
             );
             fProj.push_back(p);
@@ -185,7 +193,6 @@ struct MLIRBuilder
             return p;
         } else if (isRec(sig, x, y)) {
             return b.create<faust::RecOp>(
-                ::faust::RealType::get(b.getContext()),
                 visit(hd(y)),
                 // TODO:
                 b.getI64IntegerAttr(0)
@@ -264,7 +271,6 @@ struct MLIRBuilder
             return b.create<::faust::InputOp>(
                 b.getUI32IntegerAttr(i)
             );
-        } else if (isSigFloatCast(sig)) {
         } 
         std::cerr << "Unimplemented signal type: ";
         sig->print(std::cerr);
