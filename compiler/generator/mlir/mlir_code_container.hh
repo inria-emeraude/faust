@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "instructions.hh"
+#include "llvm/Support/LogicalResult.h"
 #include "sigtype.hh"
 #include "sigtyperules.hh"
 #include "node.hh"
@@ -36,11 +37,11 @@
 struct MLIRBuilder
 {
     std::set<Tree> fVisited;
-    ::mlir::ModuleOp fMod;
-    ::mlir::MLIRContext fContext;
-    ::faust::GraphOp fGraph;
+    mlir::ModuleOp fMod;
+    mlir::MLIRContext fContext;
+    faust::GraphOp fGraph;
     std::unique_ptr<ImplicitLocOpBuilder> fBuilder;
-    std::vector<::faust::ProjOp> fProj;
+    std::vector<faust::ProjOp> fProj;
 
     /**
      * @brief Get an MLIR Operation builder from the current context.
@@ -62,7 +63,7 @@ struct MLIRBuilder
     void initialize(int numInputs, int numOutputs) 
     {
         fContext.loadDialect<faust::FaustDialect>();
-        auto loc = mlir::UnknownLoc::get(&fContext);
+        mlir::UnknownLoc loc = mlir::UnknownLoc::get(&fContext);
         fMod = mlir::ModuleOp::create(loc);
 
         fBuilder = std::make_unique<ImplicitLocOpBuilder>(
@@ -76,7 +77,7 @@ struct MLIRBuilder
             fBuilder->getI64IntegerAttr(numInputs),
             fBuilder->getI64IntegerAttr(numOutputs)                           
         );
-        auto& block = fGraph.getBody().emplaceBlock();
+        mlir::Block& block = fGraph.getBody().emplaceBlock();
         for (int n = 0; n < numInputs; ++n) {
              block.addArgument(rType, fBuilder->getLoc());
         }
@@ -115,9 +116,9 @@ struct MLIRBuilder
 
         if (fVisited.count(sig)) {
             if (isProj(sig, &i, x)) {
-                auto& block = fGraph.getBodyRegion().getBlocks().front();
+                mlir::Block& block = fGraph.getBodyRegion().getBlocks().front();
                 for (auto& op : block.getOperations()) {
-                    if (::mlir::isa<::faust::ProjOp>(op)) {
+                    if (mlir::isa<faust::ProjOp>(op)) {
                         // TODO:
                         return fProj[0];
                     }
@@ -169,7 +170,7 @@ struct MLIRBuilder
                 visit(y)
             );
         } else if (isSigDelay1(sig, x)) {
-            auto del1 = b.create<faust::IntOp>(
+            faust::IntOp del1 = b.create<faust::IntOp>(
                 b.getI64IntegerAttr(1)
             );
             return b.create<faust::DelayOp>(
@@ -180,9 +181,9 @@ struct MLIRBuilder
             ::Type fType = getCertifiedSigType(sig);
             ::mlir::Type mType;
             if (fType->nature() == Nature::kInt) {
-                mType = ::faust::IntegerType::get(&fContext);
+                mType = faust::IntegerType::get(&fContext);
             } else {
-                mType = ::faust::RealType::get(&fContext);
+                mType = faust::RealType::get(&fContext);
             }
             auto p = b.create<faust::ProjOp>(
                 mType,
@@ -268,7 +269,7 @@ struct MLIRBuilder
             }
         // Input signal:
         } else if (isSigInput(sig, &i)) {
-            return b.create<::faust::InputOp>(
+            return b.create<faust::InputOp>(
                 b.getUI32IntegerAttr(i)
             );
         } 
@@ -297,7 +298,10 @@ struct MLIRBuilder
             outs.push_back(visit(sig));
         }
         builder().create<faust::OutputOp>(outs);
-        fMod.verify();
+        llvm::LogicalResult res = fMod.verify();
+        if (res.failed()) {
+            std::cerr << "Warning: produced IR is not valid\n";
+        }
     }
 
     /**
