@@ -201,10 +201,12 @@ if (INCLUDE_MLIR)
     message(STATUS "MLIR_DIR: ${MLIR_DIR}")
     find_package(MLIR REQUIRED CONFIG)
     find_path(FAUST_MLIR_INCLUDE_DIR
+        HINTS ${FAUST_MLIR_DIR}/include
         NAMES faust/mlir/Faust.td
         DOC "Path of Faust.td, the main tablegen file for the faust-mlir dialect"
     )
     find_library(FAUST_MLIR_LIBRARY
+        HINTS ${FAUST_MLIR_DIR}/lib
         NAMES MLIRFaust
         DOC "MLIRFaust library"
     )
