@@ -145,7 +145,7 @@ struct MLIRBuilder
             } else {
                 return b.create<faust::RealOp>(
                     // TODO: parse global graph precision
-                    b.getF64FloatAttr(double(r))
+                    b.getF32FloatAttr(double(r))
                 );
             }
         } else if (isSigIntCast(sig, x)) {
